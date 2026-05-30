@@ -178,13 +178,18 @@ def test_search_passes_wildcard_query(client, mock_db):
 # ── /analytics ────────────────────────────────────────────────────────────────
 
 def test_dashboard_returns_counts(client, mock_db):
-    mock_db.fetchval.side_effect = [5, 3, 12]  # due_today, due_flash, total
+    # due_today, due_flashcards, total_topics, study_today, study_7d_avg
+    mock_db.fetchval.side_effect = [5, 3, 12, 0, 0.0]
+    mock_db.fetch.return_value = []      # no streak rows
+    mock_db.fetchrow.return_value = None  # no upcoming exam
     r = client.get("/analytics/dashboard")
     assert r.status_code == 200
     data = r.json()["data"]
     assert data["due_today"] == 5
     assert data["due_flashcards"] == 3
     assert data["total_topics"] == 12
+    assert data["current_streak"] == 0
+    assert data["readiness_score"] is None
 
 
 def test_streak_returns_list(client, mock_db):

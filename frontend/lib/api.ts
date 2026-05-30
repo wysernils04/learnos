@@ -80,7 +80,34 @@ export const topicsApi = {
     request<Topic[]>(`/topics/search?q=${encodeURIComponent(q)}`),
 }
 
+// ── Queue ─────────────────────────────────────────────────────────────────────
+
+export interface QueueItem {
+  topic: Topic
+  overdue_days: number
+  priority: number
+}
+
+export interface LearningQueue {
+  items: QueueItem[]
+  total_due: number
+  cognitive_load_today: number
+}
+
+export const queueApi = {
+  list: () => request<LearningQueue>('/queue'),
+}
+
 // ── Analytics ─────────────────────────────────────────────────────────────────
+
+export interface Exam {
+  id: string
+  user_id: string
+  module: string
+  exam_name: string
+  exam_date: string
+  created_at: string
+}
 
 export interface Dashboard {
   due_today: number
@@ -89,7 +116,7 @@ export interface Dashboard {
   total_topics: number
   study_time_today_minutes: number
   study_time_7d_avg_minutes: number
-  next_exam: unknown | null
+  next_exam: Exam | null
   readiness_score: number | null
 }
 
