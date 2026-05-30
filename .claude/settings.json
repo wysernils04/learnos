@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(pip *)",
+      "Bash(pip3 *)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(uvicorn *)",
+      "Bash(next *)",
+      "Bash(vercel *)",
+      "Bash(supabase *)",
+      "Bash(railway *)",
+      "Bash(curl *)",
+      "Bash(psql *)"
+    ]
+  }
+}
