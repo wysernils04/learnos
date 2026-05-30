@@ -3,7 +3,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { BookOpen } from 'lucide-react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -13,6 +12,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { createClient } from '@/lib/supabase'
+import { loginAction } from './actions'
 
 const schema = z.object({
   email: z.string().email('Enter a valid email address'),
@@ -21,7 +21,6 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>
 
 export default function LoginPage() {
-  const router = useRouter()
   const [authError, setAuthError] = useState<string | null>(null)
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
@@ -30,17 +29,11 @@ export default function LoginPage() {
 
   async function onSubmit(data: FormData) {
     setAuthError(null)
-    const supabase = createClient()
-    const { error } = await supabase.auth.signInWithPassword({
-      email: data.email,
-      password: data.password,
-    })
-    if (error) {
-      setAuthError(error.message)
-      return
+    const result = await loginAction(data.email, data.password)
+    // loginAction redirects on success; we only reach here on error
+    if (result?.error) {
+      setAuthError(result.error)
     }
-    router.push('/dashboard')
-    router.refresh()
   }
 
   async function signInWithGoogle() {
