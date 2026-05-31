@@ -11,7 +11,7 @@ from cryptography.fernet import Fernet
 
 from core.config import settings
 
-_MODEL = "claude-sonnet-4-20250514"
+_MODEL = "claude-haiku-4-5-20251001"  # cost-effective for MCQ generation
 
 
 def _decrypt_key(encrypted: str) -> str:
@@ -31,12 +31,12 @@ async def generate_quiz_questions(
     num_questions: int = 5,
     question_types: list[str] | None = None,
 ) -> list[dict]:
-    """Call Claude to generate quiz questions. Returns list of question dicts."""
+    """Call Claude to generate quiz questions. Returns list of raw question dicts."""
     if question_types is None:
         question_types = ["multiple_choice", "true_false"]
 
     api_key = _decrypt_key(encrypted_api_key)
-    client = anthropic.Anthropic(api_key=api_key)
+    client = anthropic.AsyncAnthropic(api_key=api_key)
 
     type_str = ", ".join(question_types)
     prompt = f"""Generate {num_questions} quiz questions about "{topic_name}".
@@ -46,20 +46,25 @@ Context:
 
 Return a JSON array. Each item must have:
 - "question": string
-- "answer": string
-- "question_type": one of {type_str}
-- "options": array of {{"label": "A/B/C/D", "text": "..."}} for multiple_choice, null otherwise
+- "answer": string  (the correct answer text)
+- "question_type": one of [{type_str}]
+- "options": array of {{"label": "A", "text": "..."}} for multiple_choice (4 options, one correct); null for others
 
-Return ONLY the JSON array, no other text."""
+Rules:
+- For multiple_choice: include exactly 4 options; the correct answer text must match one option's text exactly
+- For true_false: answer must be "True" or "False"
+- Vary question types across the list
+- Questions must be answerable from the context
 
-    message = client.messages.create(
+Return ONLY the JSON array, no markdown, no other text."""
+
+    message = await client.messages.create(
         model=_MODEL,
         max_tokens=2048,
         messages=[{"role": "user", "content": prompt}],
     )
 
     raw = message.content[0].text.strip()
-    # Strip markdown fences if present
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   ArrowLeft,
   BookOpen,
@@ -10,9 +10,11 @@ import {
   FileText,
   Music,
   Search,
+  Sparkles,
   X,
 } from 'lucide-react'
-import { filesApi, topicsApi, type SearchResult, type UploadedFile } from '@/lib/api'
+import { filesApi, quizApi, topicsApi, type QuizQuestion, type SearchResult, type UploadedFile } from '@/lib/api'
+import { QuizRunner } from '@/components/QuizRunner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
@@ -100,6 +102,8 @@ export default function TopicDetailPage() {
   const [scopedToTopic, setScopedToTopic] = useState(true)
   const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null)
   const [searching, setSearching] = useState(false)
+  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[] | null>(null)
+  const [quizScore, setQuizScore] = useState<number | null>(null)
 
   const { data: topic, isLoading: topicLoading } = useQuery({
     queryKey: ['topic', id],
@@ -111,6 +115,14 @@ export default function TopicDetailPage() {
     queryKey: ['topic-files', id],
     queryFn: () => topicsApi.files(id).then((r) => r.data ?? []),
     enabled: !!id,
+  })
+
+  const generateQuiz = useMutation({
+    mutationFn: () => quizApi.generate(id),
+    onSuccess: (res) => {
+      setQuizQuestions(res.data ?? [])
+      setQuizScore(null)
+    },
   })
 
   async function handleSearch(e: React.FormEvent) {
@@ -249,6 +261,74 @@ export default function TopicDetailPage() {
                   <SearchResultCard key={r.chunk_id} result={r} />
                 ))
               )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Auto quiz */}
+      <Card className="bg-white/80 backdrop-blur-md border-white/50 shadow-glass rounded-2xl">
+        <CardContent className="p-5">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary-500" />
+              <h2 className="text-sm font-semibold text-primary-800">AI quiz</h2>
+            </div>
+            {!quizQuestions && (
+              <Button
+                size="sm"
+                onClick={() => generateQuiz.mutate()}
+                loading={generateQuiz.isPending}
+                disabled={generateQuiz.isPending}
+              >
+                Generate quiz
+              </Button>
+            )}
+            {quizQuestions && !quizScore && (
+              <Button size="sm" variant="outline" onClick={() => setQuizQuestions(null)}>
+                Cancel
+              </Button>
+            )}
+          </div>
+
+          {generateQuiz.isError && (
+            <p className="text-xs text-destructive">
+              {(generateQuiz.error as { message?: string })?.message ?? 'Generation failed. Check your API key in Settings.'}
+            </p>
+          )}
+
+          {!quizQuestions && !generateQuiz.isPending && (
+            <p className="text-xs text-muted-foreground">
+              Generate questions from your uploaded notes using Claude AI.
+              Requires an Anthropic API key in{' '}
+              <a href="/settings" className="text-primary-600 underline hover:text-primary-800">Settings</a>.
+            </p>
+          )}
+
+          {generateQuiz.isPending && (
+            <div className="space-y-2">
+              {[1,2,3].map((i) => <div key={i} className="h-8 animate-pulse rounded-lg bg-primary-50" />)}
+            </div>
+          )}
+
+          {quizQuestions && quizScore === null && (
+            <QuizRunner
+              questions={quizQuestions}
+              topicId={id}
+              onFinish={(pct) => { setQuizScore(pct); setQuizQuestions(null) }}
+            />
+          )}
+
+          {quizScore !== null && (
+            <div className="flex flex-col items-center gap-3 py-4">
+              <p className="text-3xl font-bold text-primary-900">{quizScore}%</p>
+              <p className="text-sm text-muted-foreground">
+                {quizScore >= 85 ? 'Excellent! ' : quizScore >= 60 ? 'Good work. ' : 'Keep studying. '}
+                Score recorded.
+              </p>
+              <Button variant="outline" size="sm" onClick={() => { setQuizScore(null) }}>
+                Try again
+              </Button>
             </div>
           )}
         </CardContent>

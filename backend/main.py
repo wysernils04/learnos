@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from core.config import settings
 from core.database import close_pool, init_pool
 from core.storage import ensure_bucket
-from routers import analytics, exams, files, flashcards, queue, quiz, sessions, sbb, topics
+from routers import analytics, exams, files, flashcards, queue, quiz, sessions, settings, sbb, topics
 
 
 @asynccontextmanager
@@ -70,5 +70,6 @@ app.include_router(exams.router,      prefix="/exams",      tags=["exams"])
 app.include_router(quiz.router,       prefix="/quiz",       tags=["quiz"])
 app.include_router(files.router,      prefix="/files",      tags=["files"])
 app.include_router(sessions.router,   prefix="/sessions",   tags=["sessions"])
+app.include_router(settings.router,   prefix="/settings",   tags=["settings"])
 app.include_router(analytics.router,  prefix="/analytics",  tags=["analytics"])
 app.include_router(sbb.router,        prefix="/sbb",        tags=["sbb"])

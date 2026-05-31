@@ -127,6 +127,50 @@ export const analyticsApi = {
   streak: () => request<{ date: string; topics_reviewed: number }[]>('/analytics/streak'),
 }
 
+// ── Settings ──────────────────────────────────────────────────────────────────
+
+export const settingsApi = {
+  get: () => request<{ has_key: boolean }>('/settings'),
+  saveApiKey: (key: string) =>
+    request<{ has_key: boolean }>('/settings/api-key', {
+      method: 'PUT',
+      body: JSON.stringify({ anthropic_api_key: key }),
+    }),
+  deleteApiKey: () => request<{ has_key: boolean }>('/settings/api-key', { method: 'DELETE' }),
+}
+
+// ── Quiz ──────────────────────────────────────────────────────────────────────
+
+export interface QuizOption {
+  label: string
+  text: string
+}
+
+export interface QuizQuestion {
+  id: string
+  question: string
+  answer: string
+  question_type: 'multiple_choice' | 'true_false' | 'short_answer'
+  options: QuizOption[] | null
+}
+
+export const quizApi = {
+  generate: (topicId: string, numQuestions = 5) =>
+    request<QuizQuestion[]>('/quiz/generate', {
+      method: 'POST',
+      body: JSON.stringify({
+        topic_id: topicId,
+        num_questions: numQuestions,
+        question_types: ['multiple_choice', 'true_false'],
+      }),
+    }),
+  submitResult: (topicId: string, scorePercent: number) =>
+    request<null>('/quiz/result', {
+      method: 'POST',
+      body: JSON.stringify({ topic_id: topicId, score_percent: scorePercent }),
+    }),
+}
+
 // ── Exams ─────────────────────────────────────────────────────────────────────
 
 export interface ExamItem {
