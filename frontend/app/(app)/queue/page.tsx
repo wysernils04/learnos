@@ -1,23 +1,47 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, RefreshCw } from 'lucide-react'
 import { ReviewCard } from '@/components/ReviewCard'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { queueApi, topicsApi } from '@/lib/api'
+import { queueApi, sessionsApi, topicsApi } from '@/lib/api'
 
 export default function QueuePage() {
   const queryClient = useQueryClient()
   const [reviewedCount, setReviewedCount] = useState(0)
   const [currentIndex, setCurrentIndex] = useState(0)
+  const sessionIdRef = useRef<string | null>(null)
+  const sessionEndedRef = useRef(false)
+
+  useEffect(() => {
+    sessionsApi.start({ session_type: 'review' }).then((r) => {
+      if (r.data) sessionIdRef.current = r.data.id
+    })
+    return () => {
+      if (sessionIdRef.current && !sessionEndedRef.current) {
+        sessionEndedRef.current = true
+        sessionsApi.end(sessionIdRef.current)
+      }
+    }
+  }, [])
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['queue'],
     queryFn: queueApi.list,
     staleTime: 30_000,
   })
+
+  useEffect(() => {
+    const total = data?.data?.items?.length ?? 0
+    if (total > 0 && currentIndex >= total && reviewedCount > 0 && sessionIdRef.current && !sessionEndedRef.current) {
+      sessionEndedRef.current = true
+      sessionsApi.end(sessionIdRef.current).then(() => {
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      })
+    }
+  }, [currentIndex, data, reviewedCount, queryClient])
 
   const reviewMutation = useMutation({
     mutationFn: ({ id, quality }: { id: string; quality: number }) =>

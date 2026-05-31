@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle, Pencil, Plus, Trash2 } from 'lucide-react'
-import { flashcardsApi, topicsApi, type Flashcard, type Topic } from '@/lib/api'
+import { flashcardsApi, sessionsApi, topicsApi, type Flashcard, type Topic } from '@/lib/api'
 import { FlashcardReviewCard } from '@/components/FlashcardReviewCard'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -155,6 +155,8 @@ export default function FlashcardsPage() {
   const [done, setDone] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editCard, setEditCard] = useState<Flashcard | undefined>()
+  const sessionIdRef = useRef<string | null>(null)
+  const sessionEndedRef = useRef(false)
 
   const { data: dueCards = [], isLoading: dueLoading } = useQuery({
     queryKey: ['flashcards-due'],
@@ -172,6 +174,30 @@ export default function FlashcardsPage() {
   })
 
   const topicMap = Object.fromEntries(topics.map((t) => [t.id, t.name]))
+
+  // Start a flashcard session when the review tab has due cards; end on unmount or when done
+  useEffect(() => {
+    if (tab !== 'review' || dueCards.length === 0) return
+    sessionEndedRef.current = false
+    sessionsApi.start({ session_type: 'flashcard' }).then((r) => {
+      if (r.data) sessionIdRef.current = r.data.id
+    })
+    return () => {
+      if (sessionIdRef.current && !sessionEndedRef.current) {
+        sessionEndedRef.current = true
+        sessionsApi.end(sessionIdRef.current)
+      }
+    }
+  }, [tab, dueCards.length])
+
+  useEffect(() => {
+    if (done && sessionIdRef.current && !sessionEndedRef.current) {
+      sessionEndedRef.current = true
+      sessionsApi.end(sessionIdRef.current).then(() => {
+        qc.invalidateQueries({ queryKey: ['dashboard'] })
+      })
+    }
+  }, [done, qc])
 
   const reviewCard = useMutation({
     mutationFn: ({ id, quality }: { id: string; quality: number }) =>

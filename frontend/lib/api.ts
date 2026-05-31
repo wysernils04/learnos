@@ -270,6 +270,35 @@ export interface SearchResult {
   topic_id: string | null
 }
 
+// ── Sessions ──────────────────────────────────────────────────────────────────
+
+export interface StudySession {
+  id: string
+  user_id: string
+  topic_id: string | null
+  start_time: string
+  end_time: string | null
+  duration_minutes: number | null
+  quality_score: number | null
+  session_type: string
+  created_at: string
+}
+
+export const sessionsApi = {
+  start: (data: { session_type: string; topic_id?: string }) =>
+    request<StudySession>('/sessions/start', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  end: (id: string, qualityScore?: number) =>
+    request<StudySession>(`/sessions/${id}/end`, {
+      method: 'POST',
+      body: JSON.stringify({ quality_score: qualityScore ?? null }),
+    }),
+}
+
+// ── Files ─────────────────────────────────────────────────────────────────────
+
 async function uploadRequest(formData: FormData): Promise<ApiResponse<UploadedFile>> {
   const supabase = createClient()
   const { data } = await supabase.auth.getSession()

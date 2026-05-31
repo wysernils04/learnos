@@ -72,9 +72,18 @@ async def generate_quiz(
             user.id, str(payload.topic_id),
             q["question"], q["answer"], q["question_type"], options_json,
         )
-        saved.append(dict(row))
+        row_dict = dict(row)
+        if isinstance(row_dict.get("options"), str):
+            row_dict["options"] = json.loads(row_dict["options"])
+        saved.append(row_dict)
 
     return ApiResponse.ok(saved)
+
+
+def _parse_options(row: dict) -> dict:
+    if isinstance(row.get("options"), str):
+        row["options"] = json.loads(row["options"])
+    return row
 
 
 @router.get("/{topic_id}", response_model=ApiResponse[list[QuizQuestion]])
@@ -87,7 +96,7 @@ async def get_saved_quizzes(
         "SELECT * FROM generated_quizzes WHERE user_id = $1 AND topic_id = $2 ORDER BY created_at DESC LIMIT 20",
         user.id, topic_id,
     )
-    return ApiResponse.ok([dict(r) for r in rows])
+    return ApiResponse.ok([_parse_options(dict(r)) for r in rows])
 
 
 @router.post("/result", response_model=ApiResponse[None])
