@@ -1,6 +1,8 @@
 'use client'
 
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Download } from 'lucide-react'
 import {
   Bar,
   BarChart,
@@ -15,7 +17,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { analyticsApi } from '@/lib/api'
+import { analyticsApi, downloadExport } from '@/lib/api'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
@@ -83,6 +86,13 @@ function CustomTooltip({ active, payload, label, unit = '' }: {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AnalyticsPage() {
+  const [exporting, setExporting] = useState(false)
+
+  async function handleExport() {
+    setExporting(true)
+    try { await downloadExport() } finally { setExporting(false) }
+  }
+
   const { data: streak = [] } = useQuery({
     queryKey: ['analytics-streak'],
     queryFn: () => analyticsApi.streak().then((r) => r.data ?? []),
@@ -130,9 +140,15 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-8 p-6">
-      <div>
-        <h1 className="text-2xl font-bold text-primary-900">Analytics</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Your learning patterns at a glance.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-primary-900">Analytics</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Your learning patterns at a glance.</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={handleExport} loading={exporting} disabled={exporting}>
+          <Download className="h-4 w-4 mr-1.5" />
+          Export CSV
+        </Button>
       </div>
 
       {/* Activity */}

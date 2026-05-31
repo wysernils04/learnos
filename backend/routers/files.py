@@ -104,7 +104,37 @@ async def upload_file(
     )
     file_id = str(file_row["id"])
 
-    if file_type in ("pdf", "txt"):
+    if file_type == "audio":
+        loop = asyncio.get_event_loop()
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "mp3"
+
+        def _transcribe():
+            with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as tmp:
+                tmp.write(content)
+                tmp_path = tmp.name
+            try:
+                from services.whisper_service import transcribe
+                return transcribe(tmp_path)
+            finally:
+                os.unlink(tmp_path)
+
+        transcript = await loop.run_in_executor(None, _transcribe)
+        chunk_pairs: list[tuple[str, int | None]] = [(c, None) for c in _chunk_text(transcript) if c.strip()]
+
+        if chunk_pairs:
+            texts = [cp[0] for cp in chunk_pairs]
+            vectors = await loop.run_in_executor(None, partial(emb_svc.encode_batch, texts))
+            await db.executemany(
+                "INSERT INTO file_chunks (file_id, chunk_index, page_number, chunk_text, embedding) VALUES ($1, $2, $3, $4, $5)",
+                [(file_id, idx, None, chunk_text, str(vec)) for idx, ((chunk_text, _), vec) in enumerate(zip(chunk_pairs, vectors))],
+            )
+
+        await db.execute(
+            "UPDATE files SET page_count = NULL, chunk_count = $1 WHERE id = $2",
+            len(chunk_pairs), file_id,
+        )
+
+    elif file_type in ("pdf", "txt"):
         loop = asyncio.get_event_loop()
 
         if file_type == "pdf":

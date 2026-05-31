@@ -124,7 +124,11 @@ export function FileUploadZone({ onUpload, uploading = false }: Props) {
           disabled={uploading}
           className="w-full"
         >
-          {uploading ? 'Uploading & indexing…' : 'Upload & index'}
+          {uploading
+            ? (pendingFile.type.startsWith('audio/') || /\.(mp3|m4a|wav|ogg)$/i.test(pendingFile.name)
+                ? 'Uploading & transcribing… (may take a minute)'
+                : 'Uploading & indexing…')
+            : 'Upload & index'}
         </Button>
       )}
     </div>

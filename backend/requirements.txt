@@ -29,5 +29,5 @@ sentence-transformers>=3.0.0
 # LLM
 anthropic>=0.28.0
 
-# Audio transcription — very heavy (pulls PyTorch); enable in Phase 4
-# openai-whisper>=20231117
+# Audio transcription — pulls PyTorch (~2 GB); tiny model needs ~500 MB RAM at runtime
+openai-whisper>=20231117

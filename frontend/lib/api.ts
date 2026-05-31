@@ -270,6 +270,26 @@ export interface SearchResult {
   topic_id: string | null
 }
 
+// ── Notes ─────────────────────────────────────────────────────────────────────
+
+export interface Note {
+  id: string
+  user_id: string
+  topic_id: string
+  content: string
+  created_at: string
+  updated_at: string
+}
+
+export const notesApi = {
+  list: (topicId: string) => request<Note[]>(`/notes?topic_id=${topicId}`),
+  create: (topicId: string, content: string) =>
+    request<Note>('/notes', { method: 'POST', body: JSON.stringify({ topic_id: topicId, content }) }),
+  update: (id: string, content: string) =>
+    request<Note>(`/notes/${id}`, { method: 'PUT', body: JSON.stringify({ content }) }),
+  delete: (id: string) => request<null>(`/notes/${id}`, { method: 'DELETE' }),
+}
+
 // ── Sessions ──────────────────────────────────────────────────────────────────
 
 export interface StudySession {
@@ -309,6 +329,29 @@ async function uploadRequest(formData: FormData): Promise<ApiResponse<UploadedFi
     body: formData,
   })
   return res.json()
+}
+
+export const sbbApi = {
+  connections: (from: string, to: string) =>
+    request<{ connections: SbbConnection[] }>(`/sbb/connections?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+}
+
+export interface SbbConnection {
+  from: { station: { name: string }; departure: string }
+  to: { station: { name: string }; arrival: string }
+  duration: string
+}
+
+export async function downloadExport(): Promise<void> {
+  const authHeader = await getAuthHeader()
+  const res = await fetch(`${BASE_URL}/analytics/export`, { headers: authHeader })
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'learnos-export.csv'
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 export const filesApi = {

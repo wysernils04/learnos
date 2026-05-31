@@ -6,6 +6,7 @@ import { Brain, Calendar, Clock, BookOpen, RefreshCw } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { StreakCalendar } from '@/components/StreakCalendar'
+import { SbbWidget } from '@/components/SbbWidget'
 import { analyticsApi, type Dashboard } from '@/lib/api'
 
 export function DashboardStats() {
@@ -134,6 +135,9 @@ export function DashboardStats() {
           )}
         </CardContent>
       </Card>
+
+      {/* SBB connections widget */}
+      <SbbWidget />
     </div>
   )
 }

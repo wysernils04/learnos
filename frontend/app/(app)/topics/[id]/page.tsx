@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { filesApi, quizApi, topicsApi, type QuizQuestion, type SearchResult, type UploadedFile } from '@/lib/api'
 import { QuizRunner } from '@/components/QuizRunner'
+import { TopicNotes } from '@/components/TopicNotes'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
@@ -333,6 +334,9 @@ export default function TopicDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Notes */}
+      <TopicNotes topicId={id} />
 
       {/* Next review */}
       <div className="flex items-center gap-2 rounded-xl border border-primary-100 bg-primary-50/60 px-4 py-3">

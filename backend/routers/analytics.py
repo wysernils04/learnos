@@ -1,7 +1,10 @@
+import csv
+import io
 from datetime import date, timedelta
 
 from asyncpg import Connection
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 
 from core.algorithms import _readiness
 from core.auth import CurrentUser, get_current_user
@@ -174,6 +177,57 @@ async def get_quiz_history(
         user.id,
     )
     return ApiResponse.ok([dict(r) for r in rows])
+
+
+@router.get("/export")
+async def export_data(
+    user: CurrentUser = Depends(get_current_user),
+    db: Connection = Depends(get_db),
+):
+    """Export all learning data as CSV."""
+    rows = await db.fetch(
+        """
+        SELECT
+            t.name, t.module, t.understanding_score,
+            t.easiness_factor, t.sm2_interval, t.sm2_repetitions,
+            t.last_reviewed, t.next_review_due, t.created_at,
+            COALESCE(AVG(qh.score_percent), 0)::int AS avg_quiz_score,
+            COUNT(DISTINCT qh.id) AS quiz_attempts
+        FROM topics t
+        LEFT JOIN quiz_history qh ON qh.topic_id = t.id
+        WHERE t.user_id = $1
+        GROUP BY t.id, t.name, t.module, t.understanding_score,
+                 t.easiness_factor, t.sm2_interval, t.sm2_repetitions,
+                 t.last_reviewed, t.next_review_due, t.created_at
+        ORDER BY t.module, t.name
+        """,
+        user.id,
+    )
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "Name", "Module", "Understanding (1-5)", "Easiness Factor",
+        "SM-2 Interval (days)", "SM-2 Repetitions",
+        "Last Reviewed", "Next Due", "Created",
+        "Avg Quiz Score (%)", "Quiz Attempts",
+    ])
+    for r in rows:
+        writer.writerow([
+            r["name"], r["module"], r["understanding_score"],
+            round(r["easiness_factor"], 3), r["sm2_interval"], r["sm2_repetitions"],
+            r["last_reviewed"].date() if r["last_reviewed"] else "",
+            r["next_review_due"],
+            r["created_at"].date(),
+            r["avg_quiz_score"], r["quiz_attempts"],
+        ])
+
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=learnos-export.csv"},
+    )
 
 
 @router.get("/topics-due", response_model=ApiResponse[list])

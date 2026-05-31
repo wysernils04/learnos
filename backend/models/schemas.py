@@ -255,6 +255,28 @@ class DashboardResponse(BaseModel):
     readiness_score: Optional[int]
 
 
+# ── Notes ─────────────────────────────────────────────────────────────────────
+
+class NoteCreate(BaseModel):
+    topic_id: UUID
+    content: str = Field(..., min_length=1, max_length=10_000)
+
+
+class NoteUpdate(BaseModel):
+    content: str = Field(..., min_length=1, max_length=10_000)
+
+
+class NoteResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    topic_id: UUID
+    content: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # ── User Settings ─────────────────────────────────────────────────────────────
 
 class ApiKeyRequest(BaseModel):
