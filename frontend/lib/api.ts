@@ -122,9 +122,19 @@ export interface Dashboard {
   readiness_score: number | null
 }
 
+export interface ModuleStat {
+  module: string
+  topic_count: number
+  avg_understanding: number
+  next_due: string
+}
+
 export const analyticsApi = {
   dashboard: () => request<Dashboard>('/analytics/dashboard'),
   streak: () => request<{ date: string; topics_reviewed: number }[]>('/analytics/streak'),
+  modules: () => request<ModuleStat[]>('/analytics/modules'),
+  quizHistory: () => request<{ date: string; avg_score: number; count: number }[]>('/analytics/quiz-history'),
+  topicsDue: () => request<{ bucket: string; count: number }[]>('/analytics/topics-due'),
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────

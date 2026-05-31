@@ -156,3 +156,47 @@ async def get_module_stats(
         user.id,
     )
     return ApiResponse.ok([dict(r) for r in rows])
+
+
+@router.get("/quiz-history", response_model=ApiResponse[list])
+async def get_quiz_history(
+    user: CurrentUser = Depends(get_current_user),
+    db: Connection = Depends(get_db),
+):
+    rows = await db.fetch(
+        """
+        SELECT date::date AS date, ROUND(AVG(score_percent))::int AS avg_score, COUNT(*) AS count
+        FROM quiz_history
+        WHERE user_id = $1 AND date >= CURRENT_DATE - INTERVAL '29 days'
+        GROUP BY date::date
+        ORDER BY date::date
+        """,
+        user.id,
+    )
+    return ApiResponse.ok([dict(r) for r in rows])
+
+
+@router.get("/topics-due", response_model=ApiResponse[list])
+async def get_topics_due_breakdown(
+    user: CurrentUser = Depends(get_current_user),
+    db: Connection = Depends(get_db),
+):
+    rows = await db.fetch(
+        """
+        SELECT
+            CASE
+                WHEN next_review_due < CURRENT_DATE THEN 'Overdue'
+                WHEN next_review_due = CURRENT_DATE THEN 'Today'
+                WHEN next_review_due <= CURRENT_DATE + 3 THEN 'This week'
+                WHEN next_review_due <= CURRENT_DATE + 7 THEN 'Next week'
+                ELSE 'Later'
+            END AS bucket,
+            COUNT(*) AS count
+        FROM topics
+        WHERE user_id = $1
+        GROUP BY bucket
+        ORDER BY MIN(next_review_due)
+        """,
+        user.id,
+    )
+    return ApiResponse.ok([dict(r) for r in rows])
