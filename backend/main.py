@@ -6,12 +6,14 @@ from fastapi.responses import JSONResponse
 
 from core.config import settings
 from core.database import close_pool, init_pool
+from core.storage import ensure_bucket
 from routers import analytics, exams, files, flashcards, queue, quiz, sessions, sbb, topics
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_pool()
+    ensure_bucket()
     yield
     await close_pool()
 

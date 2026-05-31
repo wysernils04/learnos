@@ -124,3 +124,59 @@ export const analyticsApi = {
   dashboard: () => request<Dashboard>('/analytics/dashboard'),
   streak: () => request<{ date: string; topics_reviewed: number }[]>('/analytics/streak'),
 }
+
+// ── Files ─────────────────────────────────────────────────────────────────────
+
+export interface UploadedFile {
+  id: string
+  user_id: string
+  topic_id: string | null
+  filename: string
+  file_path: string
+  file_type: 'pdf' | 'audio' | 'txt'
+  page_count: number | null
+  chunk_count: number
+  sha256: string
+  created_at: string
+}
+
+export interface SearchResult {
+  chunk_id: string
+  file_id: string
+  chunk_text: string
+  page_number: number | null
+  similarity: number
+  filename: string
+  topic_id: string | null
+}
+
+async function uploadRequest(formData: FormData): Promise<ApiResponse<UploadedFile>> {
+  const supabase = createClient()
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  const res = await fetch(`${BASE_URL}/files/upload`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  })
+  return res.json()
+}
+
+export const filesApi = {
+  list: () => request<UploadedFile[]>('/files'),
+
+  upload: (file: File, topicId?: string) => {
+    const form = new FormData()
+    form.append('file', file)
+    if (topicId) form.append('topic_id', topicId)
+    return uploadRequest(form)
+  },
+
+  delete: (id: string) => request<null>(`/files/${id}`, { method: 'DELETE' }),
+
+  search: (query: string, limit = 5) =>
+    request<SearchResult[]>('/files/search', {
+      method: 'POST',
+      body: JSON.stringify({ query, limit, similarity_threshold: 0.5 }),
+    }),
+}
