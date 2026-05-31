@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
@@ -67,6 +68,7 @@ function TopicRow({
   onDelete: () => void
 }) {
   const badge = dueBadge(topic.next_review_due)
+  const router = useRouter()
 
   return (
     <Card>
@@ -84,9 +86,12 @@ function TopicRow({
             ))}
           </div>
 
-          {/* Name + module */}
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-foreground truncate">{topic.name}</p>
+          {/* Name + module — click to open detail */}
+          <div
+            className="flex-1 min-w-0 cursor-pointer"
+            onClick={() => router.push(`/topics/${topic.id}`)}
+          >
+            <p className="font-semibold text-foreground truncate hover:text-primary-700 transition-colors duration-150">{topic.name}</p>
             <p className="text-xs text-muted-foreground truncate">{topic.module}</p>
           </div>
 

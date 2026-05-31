@@ -197,6 +197,7 @@ class SemanticSearchRequest(BaseModel):
     query: str = Field(..., min_length=1)
     limit: int = Field(5, ge=1, le=20)
     similarity_threshold: float = Field(0.5, ge=0.0, le=1.0)
+    topic_id: Optional[UUID] = None
 
 
 class SearchResultItem(BaseModel):

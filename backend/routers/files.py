@@ -161,10 +161,16 @@ async def semantic_search(
     db: Connection = Depends(get_db),
 ):
     loop = asyncio.get_event_loop()
+    # Fetch more when filtering by topic so we still return `limit` results
+    fetch_limit = payload.limit if payload.topic_id is None else payload.limit * 4
     vector = await loop.run_in_executor(None, partial(emb_svc.encode, payload.query))
 
     rows = await db.fetch(
         "SELECT * FROM search_file_chunks($1::vector, $2, $3, $4)",
-        str(vector), user.id, payload.limit, payload.similarity_threshold,
+        str(vector), user.id, fetch_limit, payload.similarity_threshold,
     )
-    return ApiResponse.ok([dict(r) for r in rows])
+    results = [dict(r) for r in rows]
+    if payload.topic_id is not None:
+        tid = str(payload.topic_id)
+        results = [r for r in results if str(r.get("topic_id")) == tid]
+    return ApiResponse.ok(results[: payload.limit])

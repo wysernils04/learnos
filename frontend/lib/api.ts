@@ -78,6 +78,8 @@ export const topicsApi = {
 
   search: (q: string) =>
     request<Topic[]>(`/topics/search?q=${encodeURIComponent(q)}`),
+
+  files: (id: string) => request<UploadedFile[]>(`/topics/${id}/files`),
 }
 
 // ── Queue ─────────────────────────────────────────────────────────────────────
@@ -174,9 +176,14 @@ export const filesApi = {
 
   delete: (id: string) => request<null>(`/files/${id}`, { method: 'DELETE' }),
 
-  search: (query: string, limit = 5) =>
+  search: (query: string, limit = 5, topicId?: string) =>
     request<SearchResult[]>('/files/search', {
       method: 'POST',
-      body: JSON.stringify({ query, limit, similarity_threshold: 0.5 }),
+      body: JSON.stringify({
+        query,
+        limit,
+        similarity_threshold: 0.5,
+        ...(topicId ? { topic_id: topicId } : {}),
+      }),
     }),
 }

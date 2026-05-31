@@ -9,6 +9,7 @@ from core.auth import CurrentUser, get_current_user
 from core.database import get_db
 from models.schemas import (
     ApiResponse,
+    FileResponse,
     ReviewRequest,
     ReviewResponse,
     TopicCreate,
@@ -74,6 +75,21 @@ async def get_topic(
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Topic not found")
     return ApiResponse.ok(dict(row))
+
+
+# ── Files linked to topic ─────────────────────────────────────────────────────
+
+@router.get("/{topic_id}/files", response_model=ApiResponse[list[FileResponse]])
+async def list_topic_files(
+    topic_id: UUID,
+    user: CurrentUser = Depends(get_current_user),
+    db: Connection = Depends(get_db),
+):
+    rows = await db.fetch(
+        "SELECT * FROM files WHERE user_id = $1 AND topic_id = $2 ORDER BY created_at DESC",
+        user.id, topic_id,
+    )
+    return ApiResponse.ok([dict(r) for r in rows])
 
 
 # ── Create (log_lecture) ──────────────────────────────────────────────────────
