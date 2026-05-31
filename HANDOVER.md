@@ -1,7 +1,7 @@
 # LearnOS — Project Handover
 **Last updated:** 2026-05-31  
-**Current commit:** `5570c13` (main branch)  
-**Status:** Phase 1 complete. Phase 2 complete. Phase 3 not started.
+**Current commit:** `08883b7` (main branch)  
+**Status:** Phase 1 complete. Phase 2 complete. Phase 3 complete. Deployed to Railway + Vercel.
 
 ---
 
@@ -266,7 +266,7 @@ The `try/catch` is intentional: `cookieStore.set()` throws in Server Component c
 
 ### asyncpg: custom URL parser + `statement_cache_size=0`
 
-**Problem 1:** `urlparse` breaks on passwords containing `@` (Supabase default password format `@LearnOs2026@` has two `@`). Fix: `_parse_db_url()` uses `rfind('@')` for host separator, `index(':')` for user/password split, `unquote()` for percent-encoded values.
+**Problem 1:** `urlparse` breaks on passwords containing `@` (Supabase passwords often contain `@` characters, producing multiple `@` in the URL). Fix: `_parse_db_url()` uses `rfind('@')` for host separator, `index(':')` for user/password split, `unquote()` for percent-encoded values.
 
 **Problem 2:** Supabase Supavisor transaction mode (port 6543) doesn't support prepared statements. Fix: always set `statement_cache_size=0`. Use session mode (port 5432) for all connections.
 
