@@ -1,412 +1,436 @@
 # LearnOS — Project Handover
-
-**Date:** 2026-05-30  
-**Phase completed:** Phase 1 (Foundation)  
-**Next phase:** Phase 2 (Core Learning Loop)
-
----
-
-## 1. Project Structure — What Exists
-
-```
-learnos/
-├── CLAUDE.md                          # Claude Code project context (loaded every session)
-├── HANDOVER.md                        # This file
-├── .claude/settings.json              # Project permissions (npm, python, etc. pre-allowed)
-├── supabase/
-│   └── migrations/
-│       └── 20250530000000_initial_schema.sql   # FULL schema — NOT yet applied to Supabase
-├── backend/                           # FastAPI (Python 3.12)
-│   ├── .env.example                   # Template — copy to .env and fill in
-│   ├── .gitignore
-│   ├── Procfile                       # Railway: `web: uvicorn main:app ...`
-│   ├── requirements.txt
-│   ├── pytest.ini
-│   ├── main.py                        # App entry, CORS, lifespan, routers
-│   ├── core/
-│   │   ├── config.py                  # pydantic-settings (all env vars)
-│   │   ├── auth.py                    # JWT verify → CurrentUser dependency
-│   │   ├── database.py                # asyncpg pool (init/close/get_db)
-│   │   └── algorithms.py             # _sm2, _readiness, _chunk_text, etc.
-│   ├── models/
-│   │   └── schemas.py                # 25 Pydantic v2 models + ApiResponse[T]
-│   ├── routers/
-│   │   ├── topics.py                  # FULL: CRUD + log_lecture + SM-2 review
-│   │   ├── flashcards.py              # FULL: CRUD + SM-2 review + due queue
-│   │   ├── exams.py                   # FULL: CRUD + readiness score
-│   │   ├── sessions.py                # FULL: start/end with auto duration
-│   │   ├── analytics.py              # FULL: dashboard counts, streak, modules
-│   │   ├── sbb.py                     # FULL: live proxy to transport.opendata.ch
-│   │   ├── queue.py                   # STUB (Phase 2)
-│   │   ├── quiz.py                    # STUB (Phase 3)
-│   │   └── files.py                   # STUB (Phase 3)
-│   ├── services/
-│   │   ├── llm.py                     # Fernet decrypt → Anthropic API call
-│   │   ├── embeddings.py              # Lazy sentence-transformers load + store
-│   │   ├── pdf_service.py             # pdfplumber text extraction
-│   │   └── whisper_service.py         # Lazy whisper load (Phase 4)
-│   ├── tests/
-│   │   ├── conftest.py                # Fixtures: mock_db, test_user, client
-│   │   ├── test_algorithms.py         # 37 tests: SM-2, readiness, chunking
-│   │   ├── test_schemas.py            # 23 tests: all schemas + ApiResponse
-│   │   └── test_api.py                # 31 tests: HTTP endpoints (mocked DB)
-│   └── .venv/                         # Python 3.12 venv (not committed)
-└── frontend/                          # Next.js 14 (TypeScript strict)
-    ├── .env.local.example             # Template — copy to .env.local and fill in
-    ├── .gitignore
-    ├── package.json
-    ├── tsconfig.json                  # strict: true
-    ├── next.config.ts
-    ├── tailwind.config.ts             # LearnOS design system tokens
-    ├── postcss.config.mjs
-    ├── middleware.ts                  # Session refresh + route protection
-    ├── app/
-    │   ├── globals.css                # Plus Jakarta Sans + Tailwind + glass helpers
-    │   ├── layout.tsx                 # Root layout: Providers wrapper
-    │   ├── (auth)/
-    │   │   ├── layout.tsx             # Mint gradient background
-    │   │   ├── login/page.tsx         # Email/pw + Google OAuth, Zod validation
-    │   │   └── register/page.tsx      # + confirm pw, post-submit success state
-    │   ├── (app)/
-    │   │   ├── layout.tsx             # Server: auth guard + Sidebar
-    │   │   └── dashboard/page.tsx     # Server: greeting + 4 stat cards (Phase 2 fills data)
-    │   └── auth/callback/route.ts     # OAuth PKCE code exchange
-    ├── components/
-    │   ├── providers.tsx              # React Query QueryClientProvider
-    │   ├── sidebar.tsx                # Fixed sidebar, 8 nav items, sign-out
-    │   └── ui/
-    │       ├── button.tsx             # 6 variants + loading spinner prop
-    │       ├── card.tsx               # Glassmorphism card + Header/Content/Footer
-    │       ├── input.tsx              # Glass input, error prop, aria-invalid
-    │       └── label.tsx              # Radix label
-    └── lib/
-        ├── supabase.ts                # createBrowserClient (client components)
-        ├── supabase-server.ts         # createServerClient (server components)
-        ├── store.ts                   # Zustand: useAuthStore, useUIStore
-        ├── api.ts                     # Typed API client (topicsApi, analyticsApi)
-        └── utils.ts                   # cn() (clsx + tailwind-merge)
-```
+**Last updated:** 2026-05-31  
+**Current commit:** `5570c13` (main branch)  
+**Status:** Phase 1 complete. Phase 2 complete. Phase 3 not started.
 
 ---
 
-## 2. Phase 1 Completion Status
+## Table of Contents
+1. [Architecture Overview](#1-architecture-overview)
+2. [File Inventory](#2-file-inventory)
+3. [Phase Completion Status](#3-phase-completion-status)
+4. [Environment Variables](#4-environment-variables)
+5. [Every Technical Decision Made](#5-every-technical-decision-made)
+6. [Known Issues & TODOs](#6-known-issues--todos)
+7. [Next Steps (Phase 3)](#7-next-steps-phase-3)
+8. [Verification Commands](#8-verification-commands)
 
-### ✅ Done
+---
+
+## 1. Architecture Overview
+
+```
+Browser (Next.js 14 App Router, Vercel)
+    │
+    ├── /api/* (Next.js Route Handlers) ← auth callback only
+    ├── Server Actions ('use server')   ← login
+    │
+    └── FastAPI Backend (Railway, port 8000)
+            ├── /topics    ← CRUD + SM-2 review
+            ├── /queue     ← daily learning queue
+            ├── /analytics ← dashboard stats, streak
+            ├── /flashcards, /exams, /quiz, /files, /sessions, /sbb  (stubs ready)
+            └── Supabase PostgreSQL (pgvector, 13 tables)
+```
+
+**Auth flow (critical — hard to debug):**
+1. Login form calls `loginAction()` Server Action
+2. Server Action uses `@supabase/ssr` `createServerClient` with `get`/`set`/`remove` cookie API
+3. `signInWithPassword` succeeds → `@supabase/ssr` calls `cookies.set()` → session written to HTTP response as `Set-Cookie`
+4. Server Action calls `redirect('/dashboard')` — bundles cookies + redirect in the same RSC response
+5. Middleware uses `getUser()` (server-validated) — finds session cookie — allows `/dashboard`
+
+**Important:** `@supabase/ssr` **0.3.0** uses the **old** `get`/`set`/`remove` API, NOT `getAll`/`setAll`. The newer API (`getAll`/`setAll`) was introduced in v0.5+. Using the wrong API causes silent cookie write failures.
+
+---
+
+## 2. File Inventory
+
+### Frontend (`frontend/`)
+
+#### App routes
+
+| File | Type | Description |
+|------|------|-------------|
+| `app/layout.tsx` | Server | Root layout — fonts, providers, globals |
+| `app/(auth)/layout.tsx` | Server | Centered auth wrapper |
+| `app/(auth)/login/page.tsx` | Client | Login form — react-hook-form + zod, calls `loginAction` |
+| `app/(auth)/login/actions.ts` | Server Action | `loginAction(email, password)` — signs in, calls `redirect('/dashboard')` on success, returns `{ error }` on failure |
+| `app/(auth)/register/page.tsx` | Client | Register form — client-side `supabase.auth.signUp`, shows "check email" on success |
+| `app/auth/callback/route.ts` | Route Handler | Google OAuth callback — `exchangeCodeForSession(code)` → redirect `/dashboard` |
+| `app/(app)/layout.tsx` | Server | App shell — verifies session via `getUser()`, renders `<Sidebar>` |
+| `app/(app)/dashboard/page.tsx` | Server | Greeting + renders `<DashboardStats>` |
+| `app/(app)/dashboard/stats.tsx` | Client | React Query for `/analytics/dashboard` + `/analytics/streak`, stat cards + `<StreakCalendar>` |
+| `app/(app)/queue/page.tsx` | Client | Review queue — React Query for `/queue`, renders `<ReviewCard>`, progress bar, all-done state |
+| `app/(app)/topics/page.tsx` | Client | Full topics CRUD — list with search/module filter, create/edit dialog, delete confirm, React Query |
+
+#### Components
+
+| File | Description |
+|------|-------------|
+| `components/sidebar.tsx` | Fixed left sidebar — nav links for all 8 sections, sign-out button |
+| `components/providers.tsx` | `QueryClientProvider` wrapper |
+| `components/ReviewCard.tsx` | Flip card — shows topic name, SM-2 stats; flips to reveal quality buttons 0–5 |
+| `components/StreakCalendar.tsx` | 53-week GitHub-style heatmap — teal intensity scale, month labels |
+| `components/ui/button.tsx` | shadcn Button + `loading` prop extension |
+| `components/ui/card.tsx` | shadcn Card |
+| `components/ui/dialog.tsx` | shadcn Dialog (added for topics page) |
+| `components/ui/input.tsx` | shadcn Input + `error` prop extension |
+| `components/ui/label.tsx` | shadcn Label |
+
+#### Lib
+
+| File | Description |
+|------|-------------|
+| `lib/supabase.ts` | Browser client — `createBrowserClient` (Google OAuth, register, sign-out) |
+| `lib/supabase-server.ts` | Server client — `createServerClient` with `get`/`set`/`remove` cookies API for `@supabase/ssr` 0.3.0 |
+| `lib/api.ts` | Typed fetch wrapper — attaches `Bearer` token from `getSession()`, all endpoint functions |
+| `lib/store.ts` | Zustand stores (placeholder, not yet used) |
+| `lib/utils.ts` | `cn()` helper |
+
+#### Config
+
+| File | Description |
+|------|-------------|
+| `middleware.ts` | Route protection — `getUser()` (server-validated), redirects unauthenticated → `/login`, authenticated on public paths → `/dashboard` |
+| `next.config.mjs` | Supabase Storage image domains. **Must be `.mjs`** — `.ts` syntax is invalid in this file |
+| `tailwind.config.ts` | Custom teal palette (`primary-*`), orange CTA, glassmorphism utilities |
+| `components.json` | shadcn/ui config |
+
+---
+
+### Backend (`backend/`)
+
+#### Core
+
+| File | Description |
+|------|-------------|
+| `main.py` | FastAPI app — lifespan (pool init/close), CORS, uniform `{data, error}` error envelope, all routers registered |
+| `core/config.py` | pydantic-settings — reads `.env`, exposes `settings` singleton |
+| `core/database.py` | asyncpg pool — `_parse_db_url()` custom parser (handles `@`/`:` in passwords), `statement_cache_size=0` for Supavisor |
+| `core/auth.py` | JWT validation — `PyJWT` local decode with `SUPABASE_JWT_SECRET`, HS256, audience `authenticated`. Returns `CurrentUser(id, email)` |
+| `core/algorithms.py` | **Core algorithms — do not modify.** `_sm2()`, `score_to_quality()`, `first_review_days()`, `_readiness()`, `_chunk_text()` |
+
+#### Routers (all in `routers/`)
+
+| File | Status | Endpoints |
+|------|--------|-----------|
+| `topics.py` | ✅ Full | `GET /topics`, `GET /topics/search`, `GET /topics/{id}`, `POST /topics`, `PUT /topics/{id}`, `DELETE /topics/{id}`, `POST /topics/{id}/review` |
+| `queue.py` | ✅ Full | `GET /queue` (SM-2 + cognitive load cap), `GET /queue/plan` (stub) |
+| `analytics.py` | ✅ Full | `GET /analytics/dashboard`, `GET /analytics/streak`, `GET /analytics/modules` |
+| `flashcards.py` | ⚠️ Stub | CRUD structure defined, SM-2 review wired. No frontend. |
+| `exams.py` | ⚠️ Stub | CRUD + readiness endpoint wired. No frontend. |
+| `files.py` | ⚠️ Stub | List + upload signature. Upload body not implemented (no PDF/audio processing). |
+| `quiz.py` | ⚠️ Stub | Generate + submit endpoints defined. LLM calls not wired. |
+| `sessions.py` | ⚠️ Stub | Start/end session endpoints. |
+| `sbb.py` | ⚠️ Stub | SBB timetable placeholder. |
+
+#### Services (all stubs in `services/`)
+
+| File | Status |
+|------|--------|
+| `embeddings.py` | Stub — sentence-transformers not loaded |
+| `llm.py` | Stub — Anthropic client not wired |
+| `pdf_service.py` | Stub — pdfplumber not wired |
+| `whisper_service.py` | Stub — Whisper not loaded |
+
+#### Models
+- `models/schemas.py` — all Pydantic v2 schemas for every endpoint (complete)
+
+#### Tests (`tests/`)
+- `test_algorithms.py` — SM-2, readiness, chunking unit tests
+- `test_schemas.py` — schema validation tests
+- `test_api.py` — dashboard endpoint with mocked DB
+
+---
+
+### Database (`supabase/`)
+
+| File | Status |
+|------|--------|
+| `supabase/migrations/20250530000000_initial_schema.sql` | ✅ **Applied to Supabase** (verified 2026-05-31) |
+
+**Tables created (all with RLS enabled):**
+`user_settings`, `topics`, `cognitive_load`, `quiz_history`, `notes`, `learning_streak`, `files`, `file_chunks` (pgvector 384-dim), `exams`, `exam_topics`, `flashcards`, `study_sessions`, `generated_quizzes`
+
+**Also created:** `update_updated_at()` trigger, `search_file_chunks()` pgvector function, 20+ indexes.
+
+---
+
+## 3. Phase Completion Status
+
+### Phase 1 — Foundation ✅ COMPLETE (except deploy)
 
 | Item | Status | Notes |
 |------|--------|-------|
-| PostgreSQL schema | Written, not yet applied | `supabase/migrations/20250530000000_initial_schema.sql` |
-| pgvector extension | In migration | `CREATE EXTENSION IF NOT EXISTS vector` |
-| RLS policies | In migration | All 13 tables, with proxy subquery for `file_chunks` + `exam_topics` |
-| ivfflat index | In migration | `file_chunks.embedding`, 100 lists, cosine ops |
-| `search_file_chunks()` SQL fn | In migration | Called from FastAPI `/search/semantic` |
-| FastAPI skeleton | ✅ Running locally | `uvicorn main:app --reload` works with real `.env` |
-| Auth middleware | ✅ | PyJWT HS256 verify, `get_current_user` dependency |
-| asyncpg pool | ✅ | `init_pool` / `close_pool` via lifespan |
-| `/topics` CRUD | ✅ Full | list, get, create (Ebbinghaus interval), update, delete, SM-2 review + streak upsert |
-| `/flashcards` CRUD + review | ✅ Full | SM-2 identical to topics |
-| `/exams` + readiness | ✅ Full | `_readiness()` wired to real query |
-| `/sessions` start/end | ✅ Full | auto `duration_minutes` on end |
-| `/analytics` dashboard | ✅ Partial | counts from DB; streak calendar; module stats. Full data assembly in Phase 2. |
-| `/sbb` proxy | ✅ Full | live call to `transport.opendata.ch` |
-| Test suite | ✅ 91/91 pass | algorithms, schemas, API (all mocked) |
-| Next.js 14 scaffold | ✅ | App Router, TypeScript strict, Tailwind |
-| Design system | ✅ | Glassmorphism, teal primary, orange CTA, Plus Jakarta Sans; persisted to `design-system/learnos/MASTER.md` |
-| Supabase Auth | ✅ | email/password + Google OAuth on both login + register |
-| `middleware.ts` | ✅ | Session refresh every request; unauthenticated → `/login`; authenticated → skip auth pages |
-| OAuth callback | ✅ | `app/auth/callback/route.ts` — PKCE code exchange |
-| App layout + sidebar | ✅ | Fixed sidebar, 8 nav items, active route, sign-out |
-| Dashboard stub | ✅ | Server component, Supabase user read, 4 stat cards |
-| TypeScript type-check | ✅ 0 errors | `npm run type-check` passes |
+| Supabase Auth (email + Google OAuth) | ✅ | Email working. Google wired but untested — needs OAuth configured in Supabase Dashboard |
+| DB schema, RLS, pgvector | ✅ | Migration applied. All 13 tables present. |
+| FastAPI skeleton | ✅ | All routers registered. Health check at `/health`. |
+| Next.js + Supabase Auth | ✅ | Login working end-to-end (verified with real credentials) |
+| `/topics` CRUD | ✅ | Backend + frontend both complete |
+| Deploy Railway + Vercel | ❌ | Not done. Still running locally only. |
 
-### ❌ Not Yet Done (Phase 1 spec items)
+### Phase 2 — Core Loop ✅ COMPLETE
 
-| Item | Why deferred | Where to pick up |
-|------|-------------|-----------------|
-| Apply SQL migration to Supabase | Requires Supabase project + credentials | See §6 — run in Supabase SQL Editor |
-| Copy + fill `.env` files | Requires Supabase project | See §6 |
-| Deploy backend to Railway | Requires Railway account + env vars | After env vars set up |
-| Deploy frontend to Vercel | Requires Vercel account + env vars | After env vars set up |
-| `/topics` CRUD verified end-to-end | Requires live Supabase DB | After migration applied |
-| Supabase Storage bucket creation | Manual step in Supabase Dashboard | See §7 |
-| Google OAuth provider setup | Manual in Supabase Auth settings | See §7 |
+| Item | Status |
+|------|--------|
+| `GET /queue` with SM-2 + cognitive load | ✅ |
+| `ReviewCard.tsx` (flip + quality 0–5) | ✅ |
+| `/queue` page with React Query | ✅ |
+| `GET /analytics/dashboard` | ✅ |
+| `StreakCalendar.tsx` (53-week heatmap) | ✅ |
+| Dashboard stats wired to live data | ✅ |
+| Daily briefing with streak | ✅ |
 
 ---
 
-## 3. Every Decision Made
+## 4. Environment Variables
 
-### Database
+### Backend (`backend/.env`) — never commit
+```bash
+# Supabase project URL — base URL only, NO trailing path or /rest/v1/
+SUPABASE_URL=https://<ref>.supabase.co
+# ⚠️  Current file has /rest/v1/ appended — wrong, fix before Phase 3
 
-| Decision | Choice | Why |
-|----------|--------|-----|
-| DB client | asyncpg (not supabase-py for SQL) | Direct PostgreSQL: supports complex SQL, pgvector ops, connection pooling, faster than REST API |
-| Storage client | supabase-py | Only used for Supabase Storage bucket operations (Phase 3) |
-| JWT verification | PyJWT local (not Supabase admin API) | Avoids HTTP round-trip per request; HS256 with `SUPABASE_JWT_SECRET` |
-| RLS proxy policies | `file_id IN (SELECT id FROM files WHERE user_id = auth.uid())` | `file_chunks` and `exam_topics` have no `user_id` column — can't use the simple policy pattern |
-| ivfflat lists = 100 | 100 | Good balance for up to ~1M chunks; recalibrate if corpus grows significantly |
+# Service role key — bypasses RLS. Backend only. Never expose to frontend.
+# Supabase Dashboard → Settings → API → service_role key
+SUPABASE_SERVICE_KEY=eyJhbGc...
 
-### Backend
+# JWT secret for local token verification (avoids network call per request)
+# Supabase Dashboard → Settings → API → JWT Settings → JWT Secret
+SUPABASE_JWT_SECRET=<40+ char string>
 
-| Decision | Choice | Why |
-|----------|--------|-----|
-| Python version | 3.12 (homebrew) | System Python is 3.9 — too old for `X \| Y` union syntax used in type hints |
-| Virtual env path | `backend/.venv/` | Keeps it project-local; not committed |
-| API response envelope | `{ data, error }` always | Spec requirement; custom `HTTPException` handler wraps all errors in the same shape |
-| Fernet encryption | `cryptography.fernet` | Key = `FERNET_SECRET` (must be a valid Fernet key — 32 URL-safe base64 bytes). Used for encrypting users' Anthropic API keys at rest |
-| `sentence-transformers` | Left in requirements but noted as heavy | Keep the import lazy (`_get_model()`) so Railway builds don't fail if you want to skip it |
-| `openai-whisper` | Commented out in requirements | Pulls all of PyTorch — only uncomment in Phase 4 |
-| Test mocking strategy | Patch `main.init_pool` / `main.close_pool` (not `core.database.*`) | By the time the test client runs, `main.py` has already imported those names by reference — must patch at the call site |
+# Supabase connection pooler — session mode (port 5432), NOT transaction mode (6543)
+# Supabase Dashboard → Settings → Database → Connection string (URI) → Session mode
+# URL-encode special chars in password: @ → %40, # → %23 etc.
+DATABASE_URL=postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
 
-### Frontend
+# Fernet key for encrypting users' Anthropic API keys at rest
+# Generate: python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+FERNET_SECRET=<base64 fernet key>
 
-| Decision | Choice | Why |
-|----------|--------|-----|
-| `@supabase/ssr` version | `^0.3.0` | Next.js 14 uses synchronous `cookies()`. Version 0.4+ targets Next.js 15 async cookies |
-| Font | Plus Jakarta Sans | ui-ux-pro-max recommendation for "SaaS productivity, professional, friendly" |
-| Style | Glassmorphism | Second ui-ux-pro-max query (first returned "Claymorphism / Comic Neue" which was too childish for university students) |
-| Colors | Teal-600 primary (#0D9488), orange CTA (#F97316) | ui-ux-pro-max "university SaaS" palette |
-| shadcn/ui approach | Manual component files (not shadcn CLI) | Avoids interactive CLI requirement; components are small enough to write directly; can add CLI-generated ones later |
-| `CookieOptions` typing | Imported from `@supabase/ssr` | TypeScript strict-mode complained about implicit `any` in the cookie callbacks — explicit type silences it |
-| Sidebar | Fixed at `w-64`, glassmorphism, server-side user read | Keeps page content aligned; user email fetched once in `(app)/layout.tsx` server component |
+# Comma-separated CORS origins
+CORS_ORIGINS=http://localhost:3000,https://learnos.vercel.app
+```
 
-### Bug found and fixed
+### Frontend (`frontend/.env.local`) — never commit
+```bash
+# Supabase project URL — base URL, no trailing slash or path
+NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co
 
-| Bug | Fix |
-|-----|-----|
-| `_chunk_text()` infinite loop when `overlap >= chunk_size` | Added `step = max(1, chunk_size - overlap)` guard in `core/algorithms.py:75` |
+# Supabase anon key (safe to expose — protected by RLS)
+# Supabase Dashboard → Settings → API → anon key
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGc...
+
+# Backend URL
+NEXT_PUBLIC_API_URL=http://localhost:8000           # local dev
+# NEXT_PUBLIC_API_URL=https://api.learnos.railway.app  # production
+```
 
 ---
 
-## 4. Known Issues & TODOs
+## 5. Every Technical Decision Made
 
-### Must fix before first real user
+### Auth: Server Action + `redirect()` (not client-side `router.push`)
 
-- **Migration not applied** — the entire database schema exists only as a file. Nothing in the backend will work until it's run in Supabase.
-- **No `.env` files** — `backend/.env` and `frontend/.env.local` do not exist. Both contain `*.example` templates.
-- **`analytics/dashboard` is partial** — returns live `due_today` / `due_flashcards` / `total_topics` counts but `current_streak`, `study_time_*`, `next_exam`, `readiness_score` are all hardcoded 0/None. Full assembly is Phase 2 work.
-- **`queue.py` returns empty** — `GET /queue` always returns `{ items: [], total_due: 0 }`. Phase 2 work.
-- **Dashboard stat cards show "—"** — frontend reads from the API (Phase 2) not yet wired. Currently displays placeholder values.
+**Problem:** `@supabase/ssr` sets session cookies server-side. Client-side `signInWithPassword` puts the token in the URL hash — middleware can't read it.
 
-### Technical debt / deferred items
+**How it works:** `loginAction` Server Action calls `signInWithPassword` → `@supabase/ssr` calls `cookies.set()` → cookies + `redirect('/dashboard')` are bundled in the same RSC response. Browser commits cookies then follows the redirect. Middleware finds the session.
 
-- `routers/files.py` — upload endpoint returns `ApiResponse.fail("File upload available in Phase 3")`. File upload, indexing, and semantic search are fully Phase 3.
-- `routers/quiz.py` — `generate_quiz` returns `[]`. Phase 3 (requires Anthropic key flow).
-- `services/whisper_service.py` — imports `whisper` lazily but `openai-whisper` is commented out in `requirements.txt`. Enable in Phase 4.
-- `services/embeddings.py` — `sentence-transformers` is in `requirements.txt` but will fail on first import if not installed. Uncomment or install before Phase 3.
-- Dashboard dashboard page uses `user.email.split('@')[0]` as first name — could add a `full_name` field to `user_settings` table in a future migration.
-- `@radix-ui/react-toast` is in `package.json` but no `Toast` component exists yet. Add when needed.
-- `@radix-ui/react-separator` is in `package.json` but no `Separator` component exists yet (used inline in auth pages via a plain `<div>`).
-- Test warning: `StarletteDeprecationWarning: Using httpx with starlette.testclient is deprecated; install httpx2 instead` — non-breaking, will resolve when `httpx2` is released.
+**What didn't work:**
+- `router.push('/dashboard')` after action: Next.js sends the navigation before cookies are committed
+- `router.refresh()`: not a navigation primitive — won't follow middleware redirects
+- `redirect()` with `getSession()` in middleware: `getSession()` only reads the local cookie without server validation → unreliable
+
+### `@supabase/ssr` 0.3.0 — old cookie API
+
+**Critical:** Version 0.3.0 uses `{ get, set, remove }` callbacks. Version 0.5+ uses `{ getAll, setAll }`. If you use `getAll`/`setAll` with 0.3.0, `cookies.set` is `undefined` and sessions are silently never written — cookies appear missing from every response.
+
+Correct implementation for 0.3.0:
+```typescript
+cookies: {
+  get(name: string) { return cookieStore.get(name)?.value },
+  set(name: string, value: string, options: CookieOptions) {
+    try { cookieStore.set({ name, value, ...options }) } catch {}
+  },
+  remove(name: string, options: CookieOptions) {
+    try { cookieStore.set({ name, value: '', ...options }) } catch {}
+  },
+}
+```
+The `try/catch` is intentional: `cookieStore.set()` throws in Server Component context (read-only) but works fine in Server Actions and Route Handlers.
+
+### Middleware: `getUser()` not `getSession()`
+
+`getUser()` makes a server-side API call to Supabase to validate the JWT and refresh expired tokens. `getSession()` only reads the local cookie — unreliable for route protection.
+
+### asyncpg: custom URL parser + `statement_cache_size=0`
+
+**Problem 1:** `urlparse` breaks on passwords containing `@` (Supabase default password format `@LearnOs2026@` has two `@`). Fix: `_parse_db_url()` uses `rfind('@')` for host separator, `index(':')` for user/password split, `unquote()` for percent-encoded values.
+
+**Problem 2:** Supabase Supavisor transaction mode (port 6543) doesn't support prepared statements. Fix: always set `statement_cache_size=0`. Use session mode (port 5432) for all connections.
+
+### JWT: local PyJWT decode, not Supabase Admin API
+
+Avoids one outbound HTTP call per request. `SUPABASE_JWT_SECRET` is the HS256 signing key. Validated: `exp`, `aud = "authenticated"`, `sub` (user ID).
+
+### `next.config.mjs` not `.ts`
+
+Next.js config must be `.js`, `.mjs`, or `.cjs` — not `.ts`. TypeScript syntax is invalid. Use `/** @type {import('next').NextConfig} */` JSDoc for IDE hints.
+
+### Cognitive load cap: 300 pts/day, 60 pts/topic
+
+Queue never returns more than `(300 - load_today) / 60` items regardless of how many topics are due. Protects students on exam weeks.
+
+### Topics first review: Ebbinghaus interval
+
+`next_review_due = today + round(understanding_score * 2.0 * log(1/0.7))`. Score 1 → 1 day, score 3 → 2 days, score 5 → 4 days.
+
+### Auto quiz: users bring their own Anthropic API key
+
+API keys stored Fernet-encrypted in `user_settings.anthropic_api_key_encrypted`. Never in frontend or logs. Key = `FERNET_SECRET` from env. Quiz generation uses `claude-sonnet-4-20250514` (or haiku for cost savings — ~10x cheaper with similar quality for MCQ generation).
 
 ---
 
-## 5. Exact Next Steps
+## 6. Known Issues & TODOs
 
-### Immediate (to make Phase 1 fully operational)
+### Bugs
 
-```
-1. Create a Supabase project at https://supabase.com
-2. Copy backend/.env.example → backend/.env  (fill all 5 variables — see §6)
-3. Copy frontend/.env.local.example → frontend/.env.local  (fill 3 variables)
-4. Run the SQL migration (see §7 step 1)
-5. Create the Supabase Storage bucket (see §7 step 2)
-6. Enable Google OAuth in Supabase Auth settings (see §7 step 3)
-7. Start backend:  cd backend && uvicorn main:app --reload
-8. Start frontend: cd frontend && npm run dev
-9. Visit http://localhost:3000/register, create an account, confirm email, sign in
-10. Hit http://localhost:8000/health → should return {"data":{"status":"ok",...},"error":null}
-11. POST a topic to http://localhost:8000/topics with a Bearer token → verify SM-2 works
-```
+| Issue | File | Severity |
+|-------|------|----------|
+| `SUPABASE_URL` has `/rest/v1/` appended | `backend/.env` line 2 | Low — only affects `supabase-py` client (not used yet). Fix before Phase 3 file/search features. |
+| Google OAuth callback returns `auth_callback_failed` | `app/auth/callback/route.ts` | Medium — `exchangeCodeForSession` failing. Needs Google Cloud Console credentials configured in Supabase Dashboard → Auth → Providers → Google. |
+| `backend/.env.save` on disk with real secrets | `backend/.env.save` | Security — delete immediately: `rm backend/.env.save` |
+| Study time always shows 0 on dashboard | `app/(app)/dashboard/stats.tsx` | Low — `study_sessions` table exists but nothing writes to it yet. Will be fixed in Phase 3 sessions. |
 
-### Phase 2 — Core Learning Loop
+### Missing UI (sidebar links 404)
 
-Build in this order:
-
-1. **`GET /queue`** in `routers/queue.py`
-   - Query: `SELECT * FROM topics WHERE user_id=$1 AND next_review_due <= CURRENT_DATE ORDER BY next_review_due LIMIT 20`
-   - Apply cognitive load cap (from `cognitive_load` table, max 300 pts/day at 60 pts/topic)
-   - Return `QueueItemResponse` with `overdue_days` and `priority` score
-
-2. **`GET /analytics/dashboard`** — fully assemble all fields
-   - `current_streak`: count consecutive days in `learning_streak` backwards from today
-   - `study_time_today_minutes`: sum `duration_minutes` from `study_sessions` for today
-   - `study_time_7d_avg_minutes`: avg of last 7 days
-   - `next_exam` + `readiness_score`: closest future exam + call `_readiness()`
-
-3. **`ReviewCard.tsx`** — Phase 2's centerpiece component
-   - File: `frontend/components/ReviewCard.tsx`
-   - Flow: show topic name → click "Show answer" → show quality buttons 0–5 → call `POST /topics/:id/review` → optimistic update → next card
-   - Quality buttons: `[0 Blackout] [1 Wrong] [2 Hard] [3 OK] [4 Good] [5 Perfect]` with red/orange/yellow/green colors
-
-4. **`/queue` page** — wires `ReviewCard.tsx` to `GET /queue`
-   - File: `frontend/app/(app)/queue/page.tsx`
-
-5. **`StreakCalendar.tsx`** — GitHub-style heatmap
-   - File: `frontend/components/StreakCalendar.tsx`
-   - Data: `GET /analytics/streak` (returns last 365 days)
-
-6. **Complete dashboard** — wire all 4 stat cards to live `GET /analytics/dashboard` data
-   - Use React Query: `useQuery({ queryKey: ['dashboard'], queryFn: analyticsApi.dashboard })`
+`/flashcards`, `/exams`, `/files`, `/analytics`, `/settings` — pages not yet built.
 
 ---
 
-## 6. Environment Variables
+## 7. Next Steps (Phase 3)
 
-### Backend — `backend/.env`
-
-| Variable | Where to get it | Example |
-|----------|----------------|---------|
-| `SUPABASE_URL` | Supabase Dashboard → Settings → API → Project URL | `https://abcdefgh.supabase.co` |
-| `SUPABASE_SERVICE_KEY` | Supabase Dashboard → Settings → API → service_role key (secret) | `eyJhbGc...` |
-| `SUPABASE_JWT_SECRET` | Supabase Dashboard → Settings → API → JWT Settings → JWT Secret | 40+ char string |
-| `DATABASE_URL` | Supabase Dashboard → Settings → Database → Connection string (URI) — use the **pooler** URL for production | `postgresql://postgres.[ref]:[password]@aws-0-eu-central-1.pooler.supabase.com:6543/postgres` |
-| `FERNET_SECRET` | Generate once: `python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` | `nDxodTA70n...` |
-| `CORS_ORIGINS` | Comma-separated allowed origins | `http://localhost:3000,https://learnos.vercel.app` |
-
-> ⚠️ `SUPABASE_SERVICE_KEY` bypasses RLS. Never expose it outside the backend.
-
-### Frontend — `frontend/.env.local`
-
-| Variable | Where to get it |
-|----------|----------------|
-| `NEXT_PUBLIC_SUPABASE_URL` | Same as `SUPABASE_URL` above |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase Dashboard → Settings → API → anon/public key |
-| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` locally; Railway URL in production |
-
----
-
-## 7. Commands to Verify Everything Works
-
-### Step 1 — Apply the SQL migration
-
-Go to **Supabase Dashboard → SQL Editor → New query**, paste the contents of:
-```
-supabase/migrations/20250530000000_initial_schema.sql
-```
-Run it. Verify in **Table Editor** that all 13 tables appear.
-
-### Step 2 — Create Supabase Storage bucket
-
-In **Supabase Dashboard → Storage → New bucket**:
-- Name: `learnos-files`
-- Public: **off**
-- Allowed MIME types: `application/pdf, audio/*, text/plain`
-
-Then add RLS policies for the bucket (in SQL Editor):
-```sql
--- Allow authenticated users to upload to their own folder
-CREATE POLICY "users_upload_own" ON storage.objects
-  FOR INSERT TO authenticated
-  WITH CHECK (bucket_id = 'learnos-files' AND auth.uid()::text = (storage.foldername(name))[1]);
-
--- Allow authenticated users to read their own files
-CREATE POLICY "users_read_own" ON storage.objects
-  FOR SELECT TO authenticated
-  USING (bucket_id = 'learnos-files' AND auth.uid()::text = (storage.foldername(name))[1]);
-```
-
-### Step 3 — Enable Google OAuth
-
-In **Supabase Dashboard → Authentication → Providers → Google**:
-- Enable Google provider
-- Add Client ID + Secret from [Google Cloud Console](https://console.cloud.google.com) → APIs & Services → Credentials
-- Add `https://[your-project].supabase.co/auth/v1/callback` as an authorized redirect URI in Google Cloud
-
-### Step 4 — Run backend
+### Before starting Phase 3
 
 ```bash
-cd /Users/nilswyser/learnos/backend
-# (venv already exists at .venv/)
-.venv/bin/uvicorn main:app --reload --port 8000
+# Fix SUPABASE_URL (remove /rest/v1/)
+# In backend/.env, change:
+SUPABASE_URL=https://hrxkpukmcndhwllbkbsx.supabase.co/rest/v1/
+# To:
+SUPABASE_URL=https://hrxkpukmcndhwllbkbsx.supabase.co
+
+# Delete secret backup file
+rm backend/.env.save
+
+# Deploy backend (Railway)
+cd backend && railway login && railway init && railway up
+
+# Deploy frontend (Vercel)
+cd frontend && vercel --prod
+# Set NEXT_PUBLIC_API_URL to Railway URL in Vercel env vars
 ```
 
-Expected output:
-```
-INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
-INFO:     Application startup complete.
-```
+### Recommended Phase 3 build order
 
-Verify:
+#### 3a. File upload pipeline
+1. Create Supabase Storage bucket `learnos-files` (Dashboard → Storage → New bucket, private, MIME: `application/pdf,audio/*,text/plain`)
+2. Implement `POST /files/upload` in `routers/files.py` — save to Storage, extract text, embed, store chunks
+3. Implement `services/pdf_service.py` with pdfplumber
+4. Implement `services/embeddings.py` with `sentence-transformers` `paraphrase-multilingual-MiniLM-L12-v2` (384-dim)
+5. Use `_chunk_text()` from `algorithms.py` (already written)
+6. Build `/files` page with `<FileUploadZone>` component
+
+#### 3b. Semantic search
+1. Implement `GET /search/semantic` — embed query, call `search_file_chunks()` SQL function (already in schema)
+2. Build `<SemanticSearchBar>` component
+3. Wire into topics detail view or global search
+
+#### 3c. Flashcards
+1. `routers/flashcards.py` stub already has CRUD + SM-2 — needs frontend
+2. Build `/flashcards` page — reuse `<ReviewCard>` component
+
+#### 3d. Exams + readiness
+1. `routers/exams.py` stub has CRUD + `GET /exams/{id}/readiness` — needs frontend
+2. Build `/exams` page with exam creation form, topic linking UI
+3. Build `<ReadinessGauge>` semicircular gauge (0–100%)
+
+#### 3e. Auto quiz generation
+1. Build `/settings` page — Anthropic API key input, Fernet encrypt, store in `user_settings`
+2. Implement `services/llm.py` — Anthropic `claude-sonnet-4-20250514`
+3. Implement `POST /quiz/generate` + `POST /quiz/result` endpoints
+4. Build quiz UI — multiple choice, true/false, short answer
+
+#### 3f. Analytics charts
+1. Install Recharts: `npm install recharts`
+2. Build `/analytics` page — topic retention over time, module breakdown, study time trends
+
+---
+
+## 8. Verification Commands
+
+### Check everything works locally
+
 ```bash
-curl http://localhost:8000/health
-# → {"data":{"status":"ok","version":"0.1.0"},"error":null}
-```
+# 1. Confirm DB tables
+cd backend && source .venv/bin/activate
+python3 -c "
+import asyncio, asyncpg
+from urllib.parse import unquote
+from dotenv import load_dotenv; load_dotenv('.env')
+import os
 
-### Step 5 — Run backend tests
+def parse(dsn):
+    rest = dsn.split('://', 1)[1]
+    at = rest.rfind('@')
+    ui, hi = rest[:at], rest[at+1:]
+    c = ui.index(':')
+    h, _, path = hi.partition('/')
+    host, _, port = h.rpartition(':')
+    return dict(host=host or h, port=int(port) if port.isdigit() else 5432,
+                user=unquote(ui[:c]), password=unquote(ui[c+1:]), database=path or 'postgres')
 
-```bash
-cd /Users/nilswyser/learnos/backend
-.venv/bin/pytest tests/ -v
-# → 91 passed, 1 warning in ~0.1s
-```
+async def main():
+    conn = await asyncpg.connect(**parse(os.environ['DATABASE_URL']), ssl='require', statement_cache_size=0)
+    rows = await conn.fetch(\"SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename\")
+    print('Tables:', [r['tablename'] for r in rows])
+    await conn.close()
+asyncio.run(main())
+"
+# Expected: 13 tables
 
-### Step 6 — Run frontend
+# 2. Backend starts
+uvicorn main:app --reload
+# GET http://localhost:8000/health → {"data":{"status":"ok"},"error":null}
+# GET http://localhost:8000/docs → Swagger UI
 
-```bash
-cd /Users/nilswyser/learnos/frontend
+# 3. Backend tests pass
+pytest tests/ -v
+
+# 4. Frontend TypeScript clean
+cd frontend && npx tsc --noEmit
+# Expected: TypeScript: No errors found
+
+# 5. Frontend starts
 npm run dev
-# → http://localhost:3000
+# http://localhost:3000 → redirects to /login (unauthenticated)
+
+# 6. Auth flow
+# http://localhost:3000/login → sign in → lands on /dashboard (no redirect loop)
+
+# 7. Topics CRUD
+# http://localhost:3000/topics → "Log lecture" → create topic → appears in list
+
+# 8. Review queue
+# Create a topic with understanding_score=1 → it's due today
+# http://localhost:3000/queue → topic appears → flip → pick quality → SM-2 updates
 ```
 
-Visit:
-- `http://localhost:3000/login` — should show glassmorphism auth card
-- `http://localhost:3000/register` — should show register form
-- `http://localhost:3000/dashboard` — middleware redirects to `/login` if not authenticated; shows dashboard if authenticated
+### Key local URLs
 
-### Step 7 — TypeScript type-check
-
-```bash
-cd /Users/nilswyser/learnos/frontend
-npm run type-check
-# → (no output = 0 errors)
-```
-
-### Step 8 — End-to-end smoke test (after Supabase is set up)
-
-```bash
-# 1. Register a user via the UI at http://localhost:3000/register
-# 2. Confirm the email
-# 3. Sign in — should land on /dashboard
-
-# 4. Get a JWT token (from browser DevTools → Application → Supabase session → access_token)
-TOKEN="<paste_access_token>"
-
-# 5. Log a lecture
-curl -X POST http://localhost:8000/topics \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Linear Algebra","module":"Mathematics","understanding_score":4}'
-# → {"data":{"id":"...","name":"Linear Algebra","next_review_due":"2026-06-02",...},"error":null}
-
-# 6. Review a topic (replace TOPIC_ID with the id from step 5)
-curl -X POST http://localhost:8000/topics/TOPIC_ID/review \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"quality":4}'
-# → {"data":{"topic":{...},"next_review_due":"2026-06-08","interval_days":6},"error":null}
-```
-
----
-
-## 8. Design System Reference
-
-Persisted at: `design-system/learnos/MASTER.md`
-
-| Token | Value |
-|-------|-------|
-| Style | Glassmorphism |
-| Primary | `#0D9488` (teal-600) |
-| Secondary | `#14B8A6` (teal-500) |
-| CTA | `#F97316` (orange-500) |
-| Background | `#F0FDFA` (teal-50) |
-| Text | `#134E4A` (teal-900) |
-| Font | Plus Jakarta Sans (300–800) |
-| Card | `bg-white/80 backdrop-blur-md border-white/50 shadow-glass` |
-| Border radius | `rounded-2xl` (1rem) on cards, `rounded-xl` on inputs/buttons |
-| Animation | `150-300ms ease-out` |
-
-**Rule:** Before any new frontend page/component, always run:
-```bash
-python3 .claude/skills/ui-ux-pro-max/scripts/search.py "<page-description>" --design-system --persist -p "LearnOS" --page "<page-name>"
-```
-This generates a page-specific override in `design-system/learnos/pages/<page-name>.md`.
+| URL | Purpose |
+|-----|---------|
+| `http://localhost:3000` | Frontend |
+| `http://localhost:8000/docs` | Backend Swagger UI |
+| `http://localhost:8000/health` | Health check |
+| `https://supabase.com/dashboard/project/hrxkpukmcndhwllbkbsx` | Supabase Dashboard |
