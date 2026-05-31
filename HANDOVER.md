@@ -1,103 +1,77 @@
 # LearnOS — Project Handover
-**Last updated:** 2026-05-31  
-**Current commit:** `08883b7` (main branch)  
-**Status:** Phase 1 complete. Phase 2 complete. Phase 3 complete. Deployed to Railway + Vercel.
+**Last updated:** 2026-05-31
+**Current commit:** `b53fc2a` (main branch)
+**Status:** Phases 1–3 complete. Deployed to Railway + Vercel. Phase 4 not started.
 
 ---
 
 ## Table of Contents
 1. [Architecture Overview](#1-architecture-overview)
-2. [File Inventory](#2-file-inventory)
-3. [Phase Completion Status](#3-phase-completion-status)
-4. [Environment Variables](#4-environment-variables)
-5. [Every Technical Decision Made](#5-every-technical-decision-made)
-6. [Known Issues & TODOs](#6-known-issues--todos)
-7. [Next Steps (Phase 3)](#7-next-steps-phase-3)
-8. [Verification Commands](#8-verification-commands)
+2. [Deployment URLs](#2-deployment-urls)
+3. [File Inventory](#3-file-inventory)
+4. [Phase Completion Status](#4-phase-completion-status)
+5. [Environment Variables](#5-environment-variables)
+6. [Every Technical Decision Made](#6-every-technical-decision-made)
+7. [Known Issues & TODOs](#7-known-issues--todos)
+8. [Next Steps (Phase 4)](#8-next-steps-phase-4)
+9. [Verification Commands](#9-verification-commands)
 
 ---
 
 ## 1. Architecture Overview
 
 ```
-Browser (Next.js 14 App Router, Vercel)
+Browser (Next.js 14 App Router — Vercel)
     │
-    ├── /api/* (Next.js Route Handlers) ← auth callback only
-    ├── Server Actions ('use server')   ← login
+    ├── /api/auth/callback  (Route Handler — Google OAuth)
+    ├── Server Actions      (login — writes cookies server-side)
     │
-    └── FastAPI Backend (Railway, port 8000)
-            ├── /topics    ← CRUD + SM-2 review
-            ├── /queue     ← daily learning queue
-            ├── /analytics ← dashboard stats, streak
-            ├── /flashcards, /exams, /quiz, /files, /sessions, /sbb  (stubs ready)
-            └── Supabase PostgreSQL (pgvector, 13 tables)
+    └── FastAPI Backend (Railway — learnos-api-production.up.railway.app)
+            ├── /topics          ← CRUD + SM-2 review
+            ├── /queue           ← daily learning queue (SM-2 + cognitive load)
+            ├── /flashcards      ← SM-2 flashcard CRUD + review
+            ├── /exams           ← CRUD + readiness scoring
+            ├── /files           ← upload → Storage → pgvector embeddings
+            ├── /quiz            ← Claude AI question generation + scoring
+            ├── /settings        ← Anthropic API key (Fernet encrypted)
+            ├── /analytics       ← dashboard, streak, modules, quiz history, due breakdown
+            ├── /sessions        ← study session start/end (wired, no frontend yet)
+            └── /sbb             ← Swiss transport API proxy (stub)
+                    └── Supabase PostgreSQL (pgvector, 13 tables)
+                    └── Supabase Storage   (learnos-files bucket)
 ```
 
-**Auth flow (critical — hard to debug):**
-1. Login form calls `loginAction()` Server Action
-2. Server Action uses `@supabase/ssr` `createServerClient` with `get`/`set`/`remove` cookie API
-3. `signInWithPassword` succeeds → `@supabase/ssr` calls `cookies.set()` → session written to HTTP response as `Set-Cookie`
-4. Server Action calls `redirect('/dashboard')` — bundles cookies + redirect in the same RSC response
-5. Middleware uses `getUser()` (server-validated) — finds session cookie — allows `/dashboard`
-
-**Important:** `@supabase/ssr` **0.3.0** uses the **old** `get`/`set`/`remove` API, NOT `getAll`/`setAll`. The newer API (`getAll`/`setAll`) was introduced in v0.5+. Using the wrong API causes silent cookie write failures.
+**Auth flow:**
+1. Login form → `loginAction()` Server Action
+2. `@supabase/ssr` `createServerClient` calls `signInWithPassword`
+3. Session cookies + `redirect('/dashboard')` bundled in same RSC response
+4. Middleware uses `getUser()` (server-validated JWT, not just cookie read)
 
 ---
 
-## 2. File Inventory
+## 2. Deployment URLs
 
-### Frontend (`frontend/`)
+| Service | URL |
+|---------|-----|
+| Frontend (production) | `https://learnos.ch` / `https://www.learnos.ch` |
+| Frontend (Vercel internal) | `https://frontend-dojbxekys-wysernils04s-projects.vercel.app` |
+| Backend (Railway) | `https://learnos-api-production.up.railway.app` |
+| Backend (custom domain) | `https://api.learnos.ch` *(DNS must be set — see §5)* |
+| Supabase Dashboard | `https://supabase.com/dashboard/project/hrxkpukmcndhwllbkbsx` |
+| Railway Dashboard | `https://railway.com/project/c83ebfcf-1928-4820-968b-34110dd1c95b` |
+| Vercel Dashboard | `https://vercel.com/wysernils04s-projects/frontend` |
 
-#### App routes
+**DNS records required at registrar (learnos.ch):**
 
-| File | Type | Description |
-|------|------|-------------|
-| `app/layout.tsx` | Server | Root layout — fonts, providers, globals |
-| `app/(auth)/layout.tsx` | Server | Centered auth wrapper |
-| `app/(auth)/login/page.tsx` | Client | Login form — react-hook-form + zod, calls `loginAction` |
-| `app/(auth)/login/actions.ts` | Server Action | `loginAction(email, password)` — signs in, calls `redirect('/dashboard')` on success, returns `{ error }` on failure |
-| `app/(auth)/register/page.tsx` | Client | Register form — client-side `supabase.auth.signUp`, shows "check email" on success |
-| `app/auth/callback/route.ts` | Route Handler | Google OAuth callback — `exchangeCodeForSession(code)` → redirect `/dashboard` |
-| `app/(app)/layout.tsx` | Server | App shell — verifies session via `getUser()`, renders `<Sidebar>` |
-| `app/(app)/dashboard/page.tsx` | Server | Greeting + renders `<DashboardStats>` |
-| `app/(app)/dashboard/stats.tsx` | Client | React Query for `/analytics/dashboard` + `/analytics/streak`, stat cards + `<StreakCalendar>` |
-| `app/(app)/queue/page.tsx` | Client | Review queue — React Query for `/queue`, renders `<ReviewCard>`, progress bar, all-done state |
-| `app/(app)/topics/page.tsx` | Client | Full topics CRUD — list with search/module filter, create/edit dialog, delete confirm, React Query |
-
-#### Components
-
-| File | Description |
-|------|-------------|
-| `components/sidebar.tsx` | Fixed left sidebar — nav links for all 8 sections, sign-out button |
-| `components/providers.tsx` | `QueryClientProvider` wrapper |
-| `components/ReviewCard.tsx` | Flip card — shows topic name, SM-2 stats; flips to reveal quality buttons 0–5 |
-| `components/StreakCalendar.tsx` | 53-week GitHub-style heatmap — teal intensity scale, month labels |
-| `components/ui/button.tsx` | shadcn Button + `loading` prop extension |
-| `components/ui/card.tsx` | shadcn Card |
-| `components/ui/dialog.tsx` | shadcn Dialog (added for topics page) |
-| `components/ui/input.tsx` | shadcn Input + `error` prop extension |
-| `components/ui/label.tsx` | shadcn Label |
-
-#### Lib
-
-| File | Description |
-|------|-------------|
-| `lib/supabase.ts` | Browser client — `createBrowserClient` (Google OAuth, register, sign-out) |
-| `lib/supabase-server.ts` | Server client — `createServerClient` with `get`/`set`/`remove` cookies API for `@supabase/ssr` 0.3.0 |
-| `lib/api.ts` | Typed fetch wrapper — attaches `Bearer` token from `getSession()`, all endpoint functions |
-| `lib/store.ts` | Zustand stores (placeholder, not yet used) |
-| `lib/utils.ts` | `cn()` helper |
-
-#### Config
-
-| File | Description |
-|------|-------------|
-| `middleware.ts` | Route protection — `getUser()` (server-validated), redirects unauthenticated → `/login`, authenticated on public paths → `/dashboard` |
-| `next.config.mjs` | Supabase Storage image domains. **Must be `.mjs`** — `.ts` syntax is invalid in this file |
-| `tailwind.config.ts` | Custom teal palette (`primary-*`), orange CTA, glassmorphism utilities |
-| `components.json` | shadcn/ui config |
+| Type | Name | Value |
+|------|------|-------|
+| `A` | `@` | `76.76.21.21` |
+| `A` | `www` | `76.76.21.21` |
+| `CNAME` | `api` | `learnos-api-production.up.railway.app` |
 
 ---
+
+## 3. File Inventory
 
 ### Backend (`backend/`)
 
@@ -105,170 +79,266 @@ Browser (Next.js 14 App Router, Vercel)
 
 | File | Description |
 |------|-------------|
-| `main.py` | FastAPI app — lifespan (pool init/close), CORS, uniform `{data, error}` error envelope, all routers registered |
-| `core/config.py` | pydantic-settings — reads `.env`, exposes `settings` singleton |
-| `core/database.py` | asyncpg pool — `_parse_db_url()` custom parser (handles `@`/`:` in passwords), `statement_cache_size=0` for Supavisor |
-| `core/auth.py` | JWT validation — `PyJWT` local decode with `SUPABASE_JWT_SECRET`, HS256, audience `authenticated`. Returns `CurrentUser(id, email)` |
-| `core/algorithms.py` | **Core algorithms — do not modify.** `_sm2()`, `score_to_quality()`, `first_review_days()`, `_readiness()`, `_chunk_text()` |
+| `main.py` | FastAPI app — lifespan (pool init, Storage bucket check), CORS, error envelope, all routers |
+| `core/config.py` | pydantic-settings — reads `.env`, `cors_origins_list` property |
+| `core/database.py` | asyncpg pool — `_parse_db_url()` handles `@` in passwords, `statement_cache_size=0` for Supavisor |
+| `core/auth.py` | PyJWT local decode (HS256, aud=`authenticated`). Returns `CurrentUser(id, email)` |
+| `core/algorithms.py` | **Do not modify.** `_sm2()`, `score_to_quality()`, `first_review_days()`, `_readiness()`, `_chunk_text()` |
+| `core/storage.py` | Supabase Storage singleton — `get_storage()`, `ensure_bucket()` (called at startup) |
 
-#### Routers (all in `routers/`)
+#### Routers
 
-| File | Status | Endpoints |
-|------|--------|-----------|
-| `topics.py` | ✅ Full | `GET /topics`, `GET /topics/search`, `GET /topics/{id}`, `POST /topics`, `PUT /topics/{id}`, `DELETE /topics/{id}`, `POST /topics/{id}/review` |
-| `queue.py` | ✅ Full | `GET /queue` (SM-2 + cognitive load cap), `GET /queue/plan` (stub) |
-| `analytics.py` | ✅ Full | `GET /analytics/dashboard`, `GET /analytics/streak`, `GET /analytics/modules` |
-| `flashcards.py` | ⚠️ Stub | CRUD structure defined, SM-2 review wired. No frontend. |
-| `exams.py` | ⚠️ Stub | CRUD + readiness endpoint wired. No frontend. |
-| `files.py` | ⚠️ Stub | List + upload signature. Upload body not implemented (no PDF/audio processing). |
-| `quiz.py` | ⚠️ Stub | Generate + submit endpoints defined. LLM calls not wired. |
-| `sessions.py` | ⚠️ Stub | Start/end session endpoints. |
-| `sbb.py` | ⚠️ Stub | SBB timetable placeholder. |
+| File | Status | Key Endpoints |
+|------|--------|---------------|
+| `routers/topics.py` | ✅ Full | `GET/POST/PUT/DELETE /topics`, `GET /topics/{id}`, `GET /topics/{id}/files`, `POST /topics/{id}/review` |
+| `routers/queue.py` | ✅ Full | `GET /queue` (SM-2 + cognitive load cap 300pts/day) |
+| `routers/flashcards.py` | ✅ Full | `GET /flashcards`, `GET /flashcards/due`, `POST`, `PUT /{id}`, `DELETE /{id}`, `POST /{id}/review` |
+| `routers/exams.py` | ✅ Full | `GET/POST/DELETE /exams`, `GET /exams/{id}/topics`, `GET /exams/{id}/readiness` |
+| `routers/files.py` | ✅ Full | `GET /files`, `POST /files/upload`, `DELETE /files/{id}`, `POST /files/search` |
+| `routers/quiz.py` | ✅ Full | `POST /quiz/generate`, `GET /quiz/{topic_id}`, `POST /quiz/result` |
+| `routers/settings.py` | ✅ Full | `GET /settings`, `PUT /settings/api-key`, `DELETE /settings/api-key` |
+| `routers/analytics.py` | ✅ Full | `GET /analytics/dashboard`, `/streak`, `/modules`, `/quiz-history`, `/topics-due` |
+| `routers/sessions.py` | ✅ Full | `POST /sessions/start`, `POST /sessions/{id}/end` — **no frontend yet** |
+| `routers/sbb.py` | ⚠️ Stub | `GET /sbb/connections` — proxies transport.opendata.ch — **no frontend** |
 
-#### Services (all stubs in `services/`)
+#### Services
 
-| File | Status |
-|------|--------|
-| `embeddings.py` | Stub — sentence-transformers not loaded |
-| `llm.py` | Stub — Anthropic client not wired |
-| `pdf_service.py` | Stub — pdfplumber not wired |
-| `whisper_service.py` | Stub — Whisper not loaded |
+| File | Status | Notes |
+|------|--------|-------|
+| `services/pdf_service.py` | ✅ Full | pdfplumber — `extract_text()`, `extract_text_by_page()` |
+| `services/embeddings.py` | ✅ Full | sentence-transformers `paraphrase-multilingual-MiniLM-L12-v2` — `encode()`, `encode_batch()` |
+| `services/llm.py` | ✅ Full | AsyncAnthropic `claude-haiku-4-5-20251001` — `generate_quiz_questions()`, `encrypt_key()` |
+| `services/whisper_service.py` | ⚠️ Stub | OpenAI Whisper tiny — Phase 4. `openai-whisper` commented out of `requirements.txt` |
 
 #### Models
 - `models/schemas.py` — all Pydantic v2 schemas for every endpoint (complete)
 
 #### Tests (`tests/`)
-- `test_algorithms.py` — SM-2, readiness, chunking unit tests
-- `test_schemas.py` — schema validation tests
-- `test_api.py` — dashboard endpoint with mocked DB
+- `test_algorithms.py` — SM-2, readiness, chunking
+- `test_schemas.py` — schema validation
+- `test_api.py` — dashboard with mocked DB
+
+---
+
+### Frontend (`frontend/`)
+
+#### App Routes
+
+| File | Type | Description |
+|------|------|-------------|
+| `app/layout.tsx` | Server | Root layout — fonts, providers, globals |
+| `app/(auth)/layout.tsx` | Server | Centered auth wrapper |
+| `app/(auth)/login/page.tsx` | Client | Login form — react-hook-form + zod |
+| `app/(auth)/login/actions.ts` | Server Action | `loginAction` — signs in, redirects `/dashboard` |
+| `app/(auth)/register/page.tsx` | Client | Register — client-side `signUp`, email confirm prompt |
+| `app/auth/callback/route.ts` | Route Handler | Google OAuth code exchange |
+| `app/(app)/layout.tsx` | Server | App shell — `getUser()` guard, `<Sidebar>` |
+| `app/(app)/dashboard/page.tsx` | Server | Greeting + `<DashboardStats>` |
+| `app/(app)/dashboard/stats.tsx` | Client | React Query `/analytics/dashboard` + `/analytics/streak` |
+| `app/(app)/queue/page.tsx` | Client | SM-2 review queue — `<ReviewCard>`, progress bar |
+| `app/(app)/topics/page.tsx` | Client | Topics CRUD — list, create/edit dialog, delete, search/filter |
+| `app/(app)/topics/[id]/page.tsx` | Client | Topic detail — SM-2 stats, linked files, semantic search, AI quiz |
+| `app/(app)/files/page.tsx` | Client | File upload zone, semantic search, file list with delete |
+| `app/(app)/flashcards/page.tsx` | Client | Review tab (due queue) + Manage tab (CRUD) |
+| `app/(app)/exams/page.tsx` | Client | Exam list with readiness panel, create dialog with topic multi-select |
+| `app/(app)/analytics/page.tsx` | Client | 4 Recharts charts — activity, module understanding, schedule donut, quiz trend |
+| `app/(app)/settings/page.tsx` | Client | Anthropic API key save/delete with show/hide toggle |
+
+#### Components
+
+| File | Description |
+|------|-------------|
+| `components/sidebar.tsx` | Fixed left sidebar — all 8 nav links, sign-out |
+| `components/providers.tsx` | `QueryClientProvider` wrapper |
+| `components/ReviewCard.tsx` | SM-2 topic flip card — quality 0–5 buttons |
+| `components/FlashcardReviewCard.tsx` | Flashcard flip card — question → reveal answer → quality 0–5 |
+| `components/QuizRunner.tsx` | AI quiz runner — MC, true/false, short answer, score submission |
+| `components/ReadinessGauge.tsx` | SVG semicircular gauge 0–100% — teal/orange/red zones |
+| `components/FileUploadZone.tsx` | Drag-and-drop upload — 50MB limit, PDF/TXT/audio |
+| `components/StreakCalendar.tsx` | 53-week GitHub-style heatmap — teal intensity |
+| `components/ui/button.tsx` | shadcn Button + `loading` prop |
+| `components/ui/card.tsx` | shadcn Card |
+| `components/ui/dialog.tsx` | shadcn Dialog |
+| `components/ui/input.tsx` | shadcn Input + `error` prop |
+| `components/ui/label.tsx` | shadcn Label |
+
+#### Lib
+
+| File | Description |
+|------|-------------|
+| `lib/api.ts` | Typed fetch wrapper — Bearer auth, all endpoint functions and types |
+| `lib/supabase.ts` | Browser client — `createBrowserClient` |
+| `lib/supabase-server.ts` | Server client — `createServerClient` with `get`/`set`/`remove` cookie API |
+| `lib/store.ts` | Zustand stores (placeholder — not yet used) |
+| `lib/utils.ts` | `cn()` helper |
+
+#### Config
+
+| File | Description |
+|------|-------------|
+| `middleware.ts` | `getUser()` route protection, unauthenticated → `/login` |
+| `next.config.mjs` | Supabase Storage image domains. **Must be `.mjs`** — `.ts` is invalid |
+| `tailwind.config.ts` | Teal palette (`primary-*`), orange CTA, glassmorphism utilities |
+| `components.json` | shadcn/ui config |
 
 ---
 
 ### Database (`supabase/`)
 
-| File | Status |
-|------|--------|
-| `supabase/migrations/20250530000000_initial_schema.sql` | ✅ **Applied to Supabase** (verified 2026-05-31) |
+`supabase/migrations/20250530000000_initial_schema.sql` — **applied to Supabase**
 
-**Tables created (all with RLS enabled):**
-`user_settings`, `topics`, `cognitive_load`, `quiz_history`, `notes`, `learning_streak`, `files`, `file_chunks` (pgvector 384-dim), `exams`, `exam_topics`, `flashcards`, `study_sessions`, `generated_quizzes`
+**13 tables (all with RLS `auth.uid() = user_id`):**
 
-**Also created:** `update_updated_at()` trigger, `search_file_chunks()` pgvector function, 20+ indexes.
+| Table | Purpose |
+|-------|---------|
+| `user_settings` | Anthropic API key (Fernet-encrypted), per user |
+| `topics` | Core learning topics — full SM-2 state |
+| `cognitive_load` | Daily load cap (60pts/topic, 300pts/day max) |
+| `quiz_history` | Quiz attempt scores — feeds readiness algorithm |
+| `notes` | Free-text topic notes (no frontend yet) |
+| `learning_streak` | Daily review counts — feeds heatmap + streak counter |
+| `files` | File metadata — path, type, chunk count, sha256 |
+| `file_chunks` | pgvector 384-dim embeddings — `search_file_chunks()` SQL function |
+| `exams` | Upcoming exams with dates |
+| `exam_topics` | Many-to-many: exams ↔ topics |
+| `flashcards` | SM-2 flashcards with question/answer |
+| `study_sessions` | Session start/end/duration (wired backend, no frontend) |
+| `generated_quizzes` | Claude-generated questions persisted per topic |
+
+**Also:** `update_updated_at()` trigger, `search_file_chunks()` pgvector cosine similarity function, 20+ indexes.
+
+**Supabase Storage:** bucket `learnos-files` (private) — created automatically at backend startup via `ensure_bucket()`.
 
 ---
 
-## 3. Phase Completion Status
+## 4. Phase Completion Status
 
-### Phase 1 — Foundation ✅ COMPLETE (except deploy)
+### Phase 1 — Foundation ✅ COMPLETE
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Supabase Auth (email + Google OAuth) | ✅ | Email working. Google wired but untested — needs OAuth configured in Supabase Dashboard |
-| DB schema, RLS, pgvector | ✅ | Migration applied. All 13 tables present. |
-| FastAPI skeleton | ✅ | All routers registered. Health check at `/health`. |
-| Next.js + Supabase Auth | ✅ | Login working end-to-end (verified with real credentials) |
-| `/topics` CRUD | ✅ | Backend + frontend both complete |
-| Deploy Railway + Vercel | ❌ | Not done. Still running locally only. |
+| Supabase Auth (email) | ✅ | Working end-to-end |
+| Supabase Auth (Google OAuth) | ⚠️ | Code wired, needs Google Cloud credentials in Supabase Dashboard → Auth → Providers → Google |
+| DB schema + RLS + pgvector | ✅ | Migration applied |
+| FastAPI skeleton + all routers | ✅ | |
+| Next.js + auth | ✅ | Login verified with real credentials |
+| `/topics` CRUD | ✅ | |
+| Deploy Railway + Vercel | ✅ | Live at learnos.ch (pending DNS propagation) |
 
 ### Phase 2 — Core Loop ✅ COMPLETE
 
 | Item | Status |
 |------|--------|
-| `GET /queue` with SM-2 + cognitive load | ✅ |
-| `ReviewCard.tsx` (flip + quality 0–5) | ✅ |
-| `/queue` page with React Query | ✅ |
-| `GET /analytics/dashboard` | ✅ |
-| `StreakCalendar.tsx` (53-week heatmap) | ✅ |
-| Dashboard stats wired to live data | ✅ |
-| Daily briefing with streak | ✅ |
+| `GET /queue` (SM-2 + cognitive load) | ✅ |
+| `<ReviewCard>` flip + quality 0–5 | ✅ |
+| `/queue` page | ✅ |
+| Dashboard stats (live data) | ✅ |
+| `<StreakCalendar>` heatmap | ✅ |
+
+### Phase 3 — Features ✅ COMPLETE
+
+| Item | Status |
+|------|--------|
+| File upload → Storage → pdfplumber → sentence-transformers → pgvector | ✅ |
+| `POST /files/search` semantic search (cosine similarity) | ✅ |
+| `/files` page with drag-and-drop + search | ✅ |
+| `/topics/[id]` detail with scoped semantic search | ✅ |
+| Flashcards SM-2 (review queue + CRUD) | ✅ |
+| Exams + `ReadinessGauge` SVG | ✅ |
+| `/settings` — Anthropic API key encrypted storage | ✅ |
+| `POST /quiz/generate` — Claude Haiku MCQ generation | ✅ |
+| `<QuizRunner>` — MC, T/F, short answer + score | ✅ |
+| Analytics charts (Recharts) — activity, modules, schedule, quiz trend | ✅ |
+
+### Phase 4 — Polish ❌ NOT STARTED
+
+| Item | Status |
+|------|--------|
+| Audio transcription (Whisper) | ❌ |
+| SBB integration frontend | ❌ |
+| PWA manifest + service worker | ❌ |
+| Study sessions frontend | ❌ |
+| Notes (free-text per topic) | ❌ |
+| Export (CSV/PDF) | ❌ |
 
 ---
 
-## 4. Environment Variables
+## 5. Environment Variables
 
 ### Backend (`backend/.env`) — never commit
-```bash
-# Supabase project URL — base URL only, NO trailing path or /rest/v1/
-SUPABASE_URL=https://<ref>.supabase.co
-# ⚠️  Current file has /rest/v1/ appended — wrong, fix before Phase 3
 
-# Service role key — bypasses RLS. Backend only. Never expose to frontend.
-# Supabase Dashboard → Settings → API → service_role key
+```bash
+# Supabase project URL — base URL only, NO trailing path
+SUPABASE_URL=https://hrxkpukmcndhwllbkbsx.supabase.co
+# Get from: Supabase Dashboard → Settings → API → Project URL
+
+# Service role key — bypasses RLS. Backend only, never expose to frontend.
+# Get from: Supabase Dashboard → Settings → API → service_role key
 SUPABASE_SERVICE_KEY=eyJhbGc...
 
 # JWT secret for local token verification (avoids network call per request)
-# Supabase Dashboard → Settings → API → JWT Settings → JWT Secret
+# Get from: Supabase Dashboard → Settings → API → JWT Settings → JWT Secret
 SUPABASE_JWT_SECRET=<40+ char string>
 
-# Supabase connection pooler — session mode (port 5432), NOT transaction mode (6543)
-# Supabase Dashboard → Settings → Database → Connection string (URI) → Session mode
-# URL-encode special chars in password: @ → %40, # → %23 etc.
+# Connection pooler — session mode port 5432 (NOT transaction mode 6543)
+# Get from: Supabase Dashboard → Settings → Database → Connection string → Session mode
+# URL-encode special chars in password: @ → %40, # → %23
 DATABASE_URL=postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
 
-# Fernet key for encrypting users' Anthropic API keys at rest
+# Fernet encryption key for users' Anthropic API keys
 # Generate: python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 FERNET_SECRET=<base64 fernet key>
 
 # Comma-separated CORS origins
-CORS_ORIGINS=http://localhost:3000,https://learnos.vercel.app
+CORS_ORIGINS=http://localhost:3000,https://learnos.ch,https://www.learnos.ch,https://frontend-dojbxekys-wysernils04s-projects.vercel.app
 ```
 
 ### Frontend (`frontend/.env.local`) — never commit
+
 ```bash
-# Supabase project URL — base URL, no trailing slash or path
-NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co
+# Supabase project URL — no trailing slash
+NEXT_PUBLIC_SUPABASE_URL=https://hrxkpukmcndhwllbkbsx.supabase.co
 
 # Supabase anon key (safe to expose — protected by RLS)
-# Supabase Dashboard → Settings → API → anon key
+# Get from: Supabase Dashboard → Settings → API → anon key
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGc...
 
 # Backend URL
-NEXT_PUBLIC_API_URL=http://localhost:8000           # local dev
-# NEXT_PUBLIC_API_URL=https://api.learnos.railway.app  # production
+NEXT_PUBLIC_API_URL=http://localhost:8000            # local dev
+# NEXT_PUBLIC_API_URL=https://api.learnos.ch         # production
 ```
+
+### Railway environment (already set via `railway variables`)
+
+All backend env vars listed above are set in Railway production environment.
+To verify: `railway variables --service learnos-api`
+
+### Vercel environment (already set via `vercel env`)
+
+`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL` are set for production.
+To verify: `vercel env ls`
 
 ---
 
-## 5. Every Technical Decision Made
+## 6. Every Technical Decision Made
 
 ### Auth: Server Action + `redirect()` (not client-side `router.push`)
 
-**Problem:** `@supabase/ssr` sets session cookies server-side. Client-side `signInWithPassword` puts the token in the URL hash — middleware can't read it.
-
-**How it works:** `loginAction` Server Action calls `signInWithPassword` → `@supabase/ssr` calls `cookies.set()` → cookies + `redirect('/dashboard')` are bundled in the same RSC response. Browser commits cookies then follows the redirect. Middleware finds the session.
-
-**What didn't work:**
-- `router.push('/dashboard')` after action: Next.js sends the navigation before cookies are committed
-- `router.refresh()`: not a navigation primitive — won't follow middleware redirects
-- `redirect()` with `getSession()` in middleware: `getSession()` only reads the local cookie without server validation → unreliable
+`@supabase/ssr` sets session cookies server-side. Client-side `router.push` causes Next.js to navigate before cookies are committed → middleware never sees the session. Fix: `loginAction` Server Action calls `signInWithPassword` then `redirect('/dashboard')` — cookies and redirect travel in the same RSC response.
 
 ### `@supabase/ssr` 0.3.0 — old cookie API
 
-**Critical:** Version 0.3.0 uses `{ get, set, remove }` callbacks. Version 0.5+ uses `{ getAll, setAll }`. If you use `getAll`/`setAll` with 0.3.0, `cookies.set` is `undefined` and sessions are silently never written — cookies appear missing from every response.
-
-Correct implementation for 0.3.0:
-```typescript
-cookies: {
-  get(name: string) { return cookieStore.get(name)?.value },
-  set(name: string, value: string, options: CookieOptions) {
-    try { cookieStore.set({ name, value, ...options }) } catch {}
-  },
-  remove(name: string, options: CookieOptions) {
-    try { cookieStore.set({ name, value: '', ...options }) } catch {}
-  },
-}
-```
-The `try/catch` is intentional: `cookieStore.set()` throws in Server Component context (read-only) but works fine in Server Actions and Route Handlers.
+Version 0.3.0 uses `{ get, set, remove }` callbacks. Version ≥0.5 uses `{ getAll, setAll }`. Using the wrong API causes `cookies.set` to be `undefined` → sessions silently never written. The `try/catch` in `set`/`remove` is intentional: `cookieStore.set()` throws in Server Component context (read-only) but works in Server Actions and Route Handlers.
 
 ### Middleware: `getUser()` not `getSession()`
 
-`getUser()` makes a server-side API call to Supabase to validate the JWT and refresh expired tokens. `getSession()` only reads the local cookie — unreliable for route protection.
+`getUser()` validates the JWT server-side and refreshes expired tokens. `getSession()` only reads the local cookie without validation — unreliable for route protection.
 
 ### asyncpg: custom URL parser + `statement_cache_size=0`
 
-**Problem 1:** `urlparse` breaks on passwords containing `@` (Supabase passwords often contain `@` characters, producing multiple `@` in the URL). Fix: `_parse_db_url()` uses `rfind('@')` for host separator, `index(':')` for user/password split, `unquote()` for percent-encoded values.
+`urlparse` breaks on passwords containing `@` (Supabase passwords often include `@` characters, producing multiple `@` in the URL). Fix: `_parse_db_url()` in `core/database.py` uses `rfind('@')` for host separator, `index(':')` for user/password split, `unquote()` for percent-encoded values.
 
-**Problem 2:** Supabase Supavisor transaction mode (port 6543) doesn't support prepared statements. Fix: always set `statement_cache_size=0`. Use session mode (port 5432) for all connections.
+Supabase Supavisor transaction mode (port 6543) doesn't support prepared statements → `statement_cache_size=0`. Always use session mode (port 5432).
 
 ### JWT: local PyJWT decode, not Supabase Admin API
 
@@ -276,103 +346,116 @@ Avoids one outbound HTTP call per request. `SUPABASE_JWT_SECRET` is the HS256 si
 
 ### `next.config.mjs` not `.ts`
 
-Next.js config must be `.js`, `.mjs`, or `.cjs` — not `.ts`. TypeScript syntax is invalid. Use `/** @type {import('next').NextConfig} */` JSDoc for IDE hints.
+Next.js config must be `.js`, `.mjs`, or `.cjs`. TypeScript syntax is invalid. Use `/** @type {import('next').NextConfig} */` JSDoc for IDE hints.
 
 ### Cognitive load cap: 300 pts/day, 60 pts/topic
 
-Queue never returns more than `(300 - load_today) / 60` items regardless of how many topics are due. Protects students on exam weeks.
+Queue never returns more than `(300 - load_today) / 60` items. Protects students on exam weeks from being overwhelmed.
 
 ### Topics first review: Ebbinghaus interval
 
 `next_review_due = today + round(understanding_score * 2.0 * log(1/0.7))`. Score 1 → 1 day, score 3 → 2 days, score 5 → 4 days.
 
-### Auto quiz: users bring their own Anthropic API key
+### File uploads: SHA256 deduplication
 
-API keys stored Fernet-encrypted in `user_settings.anthropic_api_key_encrypted`. Never in frontend or logs. Key = `FERNET_SECRET` from env. Quiz generation uses `claude-sonnet-4-20250514` (or haiku for cost savings — ~10x cheaper with similar quality for MCQ generation).
+Before uploading to Supabase Storage, SHA256 of the file content is checked against `files.sha256` per user. Duplicate returns the existing record. Storage path: `{user_id}/{sha_prefix}/{filename}`.
+
+### Embeddings: run in thread pool executor
+
+`sentence-transformers` is synchronous and CPU-bound. Running `encode_batch()` directly in an async FastAPI handler would block the event loop. Wrapped with `loop.run_in_executor(None, partial(emb_svc.encode_batch, texts))`.
+
+### Semantic search topic_id filter: post-fetch Python filter
+
+The `search_file_chunks()` SQL function doesn't accept a `topic_id` filter. Rather than a new migration, the `/files/search` endpoint fetches up to `limit * 4` results and filters by `topic_id` in Python. Acceptable for MVP — small data volumes.
+
+### Quiz LLM: Claude Haiku, not Sonnet
+
+`claude-haiku-4-5-20251001` is ~10× cheaper than Sonnet for MCQ generation with similar quality. Users pay from their own API key so cost matters.
+
+### API keys: Fernet encrypted at rest
+
+Users' Anthropic API keys are encrypted with `cryptography.Fernet` before storage in `user_settings`. Key = `FERNET_SECRET` env var. Never logged or returned to frontend.
+
+### Railway deployment: config file format
+
+Railway CLI v4 stores project links in `~/.railway/config.json` with keys: `projectPath`, `name`, `project`, `environment`, `environmentName`, `service`. The older format (used by v3) had `projectId`/`environmentId` keys — CLI v4 rejects this with "Unable to parse config file".
+
+### Vercel project name
+
+The Vercel project is named `frontend` (was linked from a previous session before this one). To rename: Vercel Dashboard → Project Settings → General → Name.
 
 ---
 
-## 6. Known Issues & TODOs
+## 7. Known Issues & TODOs
 
 ### Bugs
 
-| Issue | File | Severity |
-|-------|------|----------|
-| `SUPABASE_URL` has `/rest/v1/` appended | `backend/.env` line 2 | Low — only affects `supabase-py` client (not used yet). Fix before Phase 3 file/search features. |
-| Google OAuth callback returns `auth_callback_failed` | `app/auth/callback/route.ts` | Medium — `exchangeCodeForSession` failing. Needs Google Cloud Console credentials configured in Supabase Dashboard → Auth → Providers → Google. |
-| `backend/.env.save` on disk with real secrets | `backend/.env.save` | Security — delete immediately: `rm backend/.env.save` |
-| Study time always shows 0 on dashboard | `app/(app)/dashboard/stats.tsx` | Low — `study_sessions` table exists but nothing writes to it yet. Will be fixed in Phase 3 sessions. |
+| Issue | File | Severity | Fix |
+|-------|------|----------|-----|
+| Google OAuth callback fails | `app/auth/callback/route.ts` | Medium | Configure Google Cloud Console credentials in Supabase Dashboard → Auth → Providers → Google |
+| Study time shows 0 on dashboard | `app/(app)/dashboard/stats.tsx` | Low | `study_sessions` table exists but no frontend wires `POST /sessions/start` yet |
+| Railway auth token expires in ~1hr | `~/.railway/config.json` | Local-dev only | Run `railway login` again when token expires |
+| Sentence-transformers cold start delay | `services/embeddings.py` | Medium | Model downloads on first upload (~90MB). Railway build is slow. Consider pre-downloading in Dockerfile in Phase 4. |
+| Quiz `options` stored as JSONB but returned as string | `routers/quiz.py` | Low | asyncpg returns `jsonb` as string for `options`. Frontend `JSON.parse` handles it but schema should add a DB cast. |
 
-### Missing UI (sidebar links 404)
+### Missing features (sidebar links exist, pages built)
 
-`/flashcards`, `/exams`, `/files`, `/analytics`, `/settings` — pages not yet built.
+All pages are built. No 404s in the sidebar.
 
----
+### Not yet built (no sidebar links)
 
-## 7. Next Steps (Phase 3)
-
-### Before starting Phase 3
-
-```bash
-# Fix SUPABASE_URL (remove /rest/v1/)
-# In backend/.env, change:
-SUPABASE_URL=https://hrxkpukmcndhwllbkbsx.supabase.co/rest/v1/
-# To:
-SUPABASE_URL=https://hrxkpukmcndhwllbkbsx.supabase.co
-
-# Delete secret backup file
-rm backend/.env.save
-
-# Deploy backend (Railway)
-cd backend && railway login && railway init && railway up
-
-# Deploy frontend (Vercel)
-cd frontend && vercel --prod
-# Set NEXT_PUBLIC_API_URL to Railway URL in Vercel env vars
-```
-
-### Recommended Phase 3 build order
-
-#### 3a. File upload pipeline
-1. Create Supabase Storage bucket `learnos-files` (Dashboard → Storage → New bucket, private, MIME: `application/pdf,audio/*,text/plain`)
-2. Implement `POST /files/upload` in `routers/files.py` — save to Storage, extract text, embed, store chunks
-3. Implement `services/pdf_service.py` with pdfplumber
-4. Implement `services/embeddings.py` with `sentence-transformers` `paraphrase-multilingual-MiniLM-L12-v2` (384-dim)
-5. Use `_chunk_text()` from `algorithms.py` (already written)
-6. Build `/files` page with `<FileUploadZone>` component
-
-#### 3b. Semantic search
-1. Implement `GET /search/semantic` — embed query, call `search_file_chunks()` SQL function (already in schema)
-2. Build `<SemanticSearchBar>` component
-3. Wire into topics detail view or global search
-
-#### 3c. Flashcards
-1. `routers/flashcards.py` stub already has CRUD + SM-2 — needs frontend
-2. Build `/flashcards` page — reuse `<ReviewCard>` component
-
-#### 3d. Exams + readiness
-1. `routers/exams.py` stub has CRUD + `GET /exams/{id}/readiness` — needs frontend
-2. Build `/exams` page with exam creation form, topic linking UI
-3. Build `<ReadinessGauge>` semicircular gauge (0–100%)
-
-#### 3e. Auto quiz generation
-1. Build `/settings` page — Anthropic API key input, Fernet encrypt, store in `user_settings`
-2. Implement `services/llm.py` — Anthropic `claude-sonnet-4-20250514`
-3. Implement `POST /quiz/generate` + `POST /quiz/result` endpoints
-4. Build quiz UI — multiple choice, true/false, short answer
-
-#### 3f. Analytics charts
-1. Install Recharts: `npm install recharts`
-2. Build `/analytics` page — topic retention over time, module breakdown, study time trends
+- `/notes` — `notes` table exists, no frontend
+- Study session wiring — `sessions` router complete, no frontend calls it
 
 ---
 
-## 8. Verification Commands
+## 8. Next Steps (Phase 4)
 
-### Check everything works locally
+### 4a. Audio transcription (Whisper)
+
+1. Uncomment `openai-whisper>=20231117` in `backend/requirements.txt`
+2. Implement `services/whisper_service.py` (stub already written — just needs `transcribe()` wired)
+3. In `routers/files.py` `upload_file()`, add audio branch:
+   ```python
+   elif file_type == "audio":
+       transcript = await loop.run_in_executor(None, partial(whisper_svc.transcribe, tmp_path))
+       # then chunk + embed the transcript same as txt
+   ```
+4. Update `FileUploadZone` to show "transcribing…" state for audio files
+
+### 4b. Study sessions frontend
+
+1. Call `POST /sessions/start` when user enters `/queue` or `/flashcards`
+2. Call `POST /sessions/{id}/end` when they leave or finish the session
+3. This fixes the "study time always 0" dashboard stat
+
+### 4c. Notes per topic
+
+1. Backend: `routers/notes.py` — `GET/POST/DELETE /notes?topic_id=`
+2. Frontend: add "Notes" section to `/topics/[id]` page — simple textarea + list
+
+### 4d. PWA
+
+1. Add `app/manifest.ts` (Next.js 14 built-in manifest route)
+2. Add `public/icons/` (192×192, 512×512 PNG)
+3. Add `next-pwa` or manual service worker for offline queue caching
+
+### 4e. SBB integration frontend
+
+Backend `GET /sbb/connections?from=X&to=Y` is live. Build a widget on the dashboard showing travel time from home to university before the next exam.
+
+### 4f. Analytics export
+
+Add `GET /analytics/export?format=csv` endpoint. Frontend: "Export" button on `/analytics`.
+
+---
+
+## 9. Verification Commands
+
+### Local development
 
 ```bash
-# 1. Confirm DB tables
+# 1. Backend: confirm DB tables
 cd backend && source .venv/bin/activate
 python3 -c "
 import asyncio, asyncpg
@@ -382,10 +465,8 @@ import os
 
 def parse(dsn):
     rest = dsn.split('://', 1)[1]
-    at = rest.rfind('@')
-    ui, hi = rest[:at], rest[at+1:]
-    c = ui.index(':')
-    h, _, path = hi.partition('/')
+    at = rest.rfind('@'); ui, hi = rest[:at], rest[at+1:]
+    c = ui.index(':'); h, _, path = hi.partition('/')
     host, _, port = h.rpartition(':')
     return dict(host=host or h, port=int(port) if port.isdigit() else 5432,
                 user=unquote(ui[:c]), password=unquote(ui[c+1:]), database=path or 'postgres')
@@ -393,7 +474,7 @@ def parse(dsn):
 async def main():
     conn = await asyncpg.connect(**parse(os.environ['DATABASE_URL']), ssl='require', statement_cache_size=0)
     rows = await conn.fetch(\"SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename\")
-    print('Tables:', [r['tablename'] for r in rows])
+    print([r['tablename'] for r in rows])
     await conn.close()
 asyncio.run(main())
 "
@@ -401,32 +482,62 @@ asyncio.run(main())
 
 # 2. Backend starts
 uvicorn main:app --reload
-# GET http://localhost:8000/health → {"data":{"status":"ok"},"error":null}
-# GET http://localhost:8000/docs → Swagger UI
+# http://localhost:8000/health → {"data":{"status":"ok","version":"0.1.0"},"error":null}
+# http://localhost:8000/docs  → Swagger UI
 
-# 3. Backend tests pass
+# 3. Backend tests
 pytest tests/ -v
 
-# 4. Frontend TypeScript clean
+# 4. Frontend TypeScript
 cd frontend && npx tsc --noEmit
 # Expected: TypeScript: No errors found
 
 # 5. Frontend starts
 npm run dev
-# http://localhost:3000 → redirects to /login (unauthenticated)
-
-# 6. Auth flow
-# http://localhost:3000/login → sign in → lands on /dashboard (no redirect loop)
-
-# 7. Topics CRUD
-# http://localhost:3000/topics → "Log lecture" → create topic → appears in list
-
-# 8. Review queue
-# Create a topic with understanding_score=1 → it's due today
-# http://localhost:3000/queue → topic appears → flip → pick quality → SM-2 updates
+# http://localhost:3000 → redirects to /login
 ```
 
-### Key local URLs
+### Production health checks
+
+```bash
+# Backend
+curl https://learnos-api-production.up.railway.app/health
+# → {"data":{"status":"ok","version":"0.1.0"},"error":null}
+
+# Railway deploy status
+railway status --service learnos-api
+
+# Vercel deploy status
+vercel ls
+
+# Railway env vars
+railway variables --service learnos-api
+
+# Vercel env vars
+vercel env ls
+```
+
+### Re-deploying
+
+```bash
+# Backend
+cd backend && railway up --service learnos-api
+
+# Frontend
+cd frontend && vercel --prod
+```
+
+### Re-linking Railway (if config lost)
+
+```bash
+railway login
+railway link --project c83ebfcf-1928-4820-968b-34110dd1c95b \
+             --environment e286229e-9753-4168-b5e4-747bae72ae0e
+```
+
+---
+
+## Key Local URLs
 
 | URL | Purpose |
 |-----|---------|
@@ -434,3 +545,5 @@ npm run dev
 | `http://localhost:8000/docs` | Backend Swagger UI |
 | `http://localhost:8000/health` | Health check |
 | `https://supabase.com/dashboard/project/hrxkpukmcndhwllbkbsx` | Supabase Dashboard |
+| `https://railway.com/project/c83ebfcf-1928-4820-968b-34110dd1c95b` | Railway Dashboard |
+| `https://vercel.com/wysernils04s-projects/frontend` | Vercel Dashboard |
