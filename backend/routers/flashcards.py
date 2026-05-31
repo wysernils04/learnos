@@ -58,6 +58,30 @@ async def create_flashcard(
     return ApiResponse.ok(dict(row))
 
 
+@router.put("/{card_id}", response_model=ApiResponse[FlashcardResponse])
+async def update_flashcard(
+    card_id: UUID,
+    payload: FlashcardUpdate,
+    user: CurrentUser = Depends(get_current_user),
+    db: Connection = Depends(get_db),
+):
+    updates = payload.model_dump(exclude_none=True)
+    if not updates:
+        row = await db.fetchrow("SELECT * FROM flashcards WHERE id = $1 AND user_id = $2", card_id, user.id)
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Flashcard not found")
+        return ApiResponse.ok(dict(row))
+
+    set_clauses = ", ".join(f"{k} = ${i + 2}" for i, k in enumerate(updates))
+    row = await db.fetchrow(
+        f"UPDATE flashcards SET {set_clauses}, updated_at = NOW() WHERE id = $1 AND user_id = ${len(updates) + 2} RETURNING *",
+        card_id, *updates.values(), user.id,
+    )
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Flashcard not found")
+    return ApiResponse.ok(dict(row))
+
+
 @router.post("/{card_id}/review", response_model=ApiResponse[FlashcardResponse])
 async def review_flashcard(
     card_id: UUID,

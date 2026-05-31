@@ -127,6 +127,38 @@ export const analyticsApi = {
   streak: () => request<{ date: string; topics_reviewed: number }[]>('/analytics/streak'),
 }
 
+// ── Flashcards ────────────────────────────────────────────────────────────────
+
+export interface Flashcard {
+  id: string
+  user_id: string
+  topic_id: string
+  question: string
+  answer: string
+  source: string | null
+  easiness_factor: number
+  sm2_interval: number
+  sm2_repetitions: number
+  next_review: string
+  created_at: string
+  updated_at: string
+}
+
+export const flashcardsApi = {
+  list: () => request<Flashcard[]>('/flashcards'),
+  due: () => request<Flashcard[]>('/flashcards/due'),
+  create: (data: { topic_id: string; question: string; answer: string }) =>
+    request<Flashcard>('/flashcards', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: { question?: string; answer?: string }) =>
+    request<Flashcard>(`/flashcards/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id: string) => request<null>(`/flashcards/${id}`, { method: 'DELETE' }),
+  review: (id: string, quality: number) =>
+    request<Flashcard>(`/flashcards/${id}/review`, {
+      method: 'POST',
+      body: JSON.stringify({ quality }),
+    }),
+}
+
 // ── Files ─────────────────────────────────────────────────────────────────────
 
 export interface UploadedFile {
