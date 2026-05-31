@@ -135,6 +135,7 @@ export const analyticsApi = {
   modules: () => request<ModuleStat[]>('/analytics/modules'),
   quizHistory: () => request<{ date: string; avg_score: number; count: number }[]>('/analytics/quiz-history'),
   topicsDue: () => request<{ bucket: string; count: number }[]>('/analytics/topics-due'),
+  sessionHistory: () => request<{ date: string; total_minutes: number; session_count: number }[]>('/analytics/sessions'),
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────

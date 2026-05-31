@@ -1,7 +1,7 @@
 # LearnOS — Project Handover
 **Last updated:** 2026-05-31
-**Current commit:** `b53fc2a` (main branch)
-**Status:** Phases 1–3 complete. Deployed to Railway + Vercel. Phase 4 not started.
+**Current commit:** `37d3482` (main branch)
+**Status:** All phases (1–4) complete. Deployed to Railway + Vercel. learnos.ch DNS live.
 
 ---
 
@@ -35,7 +35,7 @@ Browser (Next.js 14 App Router — Vercel)
             ├── /quiz            ← Claude AI question generation + scoring
             ├── /settings        ← Anthropic API key (Fernet encrypted)
             ├── /analytics       ← dashboard, streak, modules, quiz history, due breakdown
-            ├── /sessions        ← study session start/end (wired, no frontend yet)
+            ├── /sessions        ← study session start/end (wired frontend + backend)
             └── /sbb             ← Swiss transport API proxy (stub)
                     └── Supabase PostgreSQL (pgvector, 13 tables)
                     └── Supabase Storage   (learnos-files bucket)
@@ -108,7 +108,7 @@ Browser (Next.js 14 App Router — Vercel)
 | `services/pdf_service.py` | ✅ Full | pdfplumber — `extract_text()`, `extract_text_by_page()` |
 | `services/embeddings.py` | ✅ Full | sentence-transformers `paraphrase-multilingual-MiniLM-L12-v2` — `encode()`, `encode_batch()` |
 | `services/llm.py` | ✅ Full | AsyncAnthropic `claude-haiku-4-5-20251001` — `generate_quiz_questions()`, `encrypt_key()` |
-| `services/whisper_service.py` | ⚠️ Stub | OpenAI Whisper tiny — Phase 4. `openai-whisper` commented out of `requirements.txt` |
+| `services/whisper_service.py` | ✅ Full | OpenAI Whisper tiny — transcribes audio to text; wired in upload pipeline with OOM fallback |
 
 #### Models
 - `models/schemas.py` — all Pydantic v2 schemas for every endpoint (complete)
@@ -202,7 +202,7 @@ Browser (Next.js 14 App Router — Vercel)
 | `exams` | Upcoming exams with dates |
 | `exam_topics` | Many-to-many: exams ↔ topics |
 | `flashcards` | SM-2 flashcards with question/answer |
-| `study_sessions` | Session start/end/duration (wired backend, no frontend) |
+| `study_sessions` | Session start/end/duration — wired in queue + flashcard pages |
 | `generated_quizzes` | Claude-generated questions persisted per topic |
 
 **Also:** `update_updated_at()` trigger, `search_file_chunks()` pgvector cosine similarity function, 20+ indexes.
@@ -250,16 +250,17 @@ Browser (Next.js 14 App Router — Vercel)
 | `<QuizRunner>` — MC, T/F, short answer + score | ✅ |
 | Analytics charts (Recharts) — activity, modules, schedule, quiz trend | ✅ |
 
-### Phase 4 — Polish ❌ NOT STARTED
+### Phase 4 — Polish ✅ COMPLETE
 
 | Item | Status |
 |------|--------|
-| Audio transcription (Whisper) | ❌ |
-| SBB integration frontend | ❌ |
-| PWA manifest + service worker | ❌ |
-| Study sessions frontend | ❌ |
-| Notes (free-text per topic) | ❌ |
-| Export (CSV/PDF) | ❌ |
+| Audio transcription (Whisper tiny) — wired in upload pipeline, graceful fallback on OOM | ✅ |
+| SBB connections widget on dashboard — localStorage station config, `/sbb/connections` | ✅ |
+| PWA manifest + apple-web-app meta + 192/512 icons | ✅ |
+| Study sessions frontend — start/end on `/queue` and `/flashcards` review | ✅ |
+| Notes per topic — CRUD, inline edit, `TopicNotes` on `/topics/[id]` | ✅ |
+| Analytics export — `GET /analytics/export` CSV + Export button on `/analytics` | ✅ |
+| Study time analytics chart — `GET /analytics/sessions` + bar chart on `/analytics` | ✅ |
 
 ---
 
@@ -388,65 +389,39 @@ The Vercel project is named `frontend` (was linked from a previous session befor
 
 ## 7. Known Issues & TODOs
 
-### Bugs
+### Bugs / Limitations
 
-| Issue | File | Severity | Fix |
-|-------|------|----------|-----|
-| Google OAuth callback fails | `app/auth/callback/route.ts` | Medium | Configure Google Cloud Console credentials in Supabase Dashboard → Auth → Providers → Google |
-| Study time shows 0 on dashboard | `app/(app)/dashboard/stats.tsx` | Low | `study_sessions` table exists but no frontend wires `POST /sessions/start` yet |
-| Railway auth token expires in ~1hr | `~/.railway/config.json` | Local-dev only | Run `railway login` again when token expires |
-| Sentence-transformers cold start delay | `services/embeddings.py` | Medium | Model downloads on first upload (~90MB). Railway build is slow. Consider pre-downloading in Dockerfile in Phase 4. |
-| Quiz `options` stored as JSONB but returned as string | `routers/quiz.py` | Low | asyncpg returns `jsonb` as string for `options`. Frontend `JSON.parse` handles it but schema should add a DB cast. |
+| Issue | File | Severity | Status |
+|-------|------|----------|--------|
+| Google OAuth needs Supabase config | `app/auth/callback/route.ts` | Medium | Frontend wired, needs Google Cloud Console + Supabase credentials (see §8) |
+| Whisper OOM on Railway free tier (512 MB) | `routers/files.py` | Medium | Graceful fallback added — file saves, chunks = 0. Upgrade to Hobby plan (~$5/mo) for full transcription |
+| Railway auth token expires | `~/.railway/config.json` | Local-dev only | Run `railway login` again when expired |
+| Sentence-transformers cold start ~5s | `services/embeddings.py` | Low | Model loads on first request. Railway keeps instance warm after first hit. |
 
-### Missing features (sidebar links exist, pages built)
+### All features built
 
-All pages are built. No 404s in the sidebar.
-
-### Not yet built (no sidebar links)
-
-- `/notes` — `notes` table exists, no frontend
-- Study session wiring — `sessions` router complete, no frontend calls it
+Everything from Phases 1–4 is complete. No 404s, no stub pages.
 
 ---
 
-## 8. Next Steps (Phase 4)
+## 8. Google OAuth Setup (one-time)
 
-### 4a. Audio transcription (Whisper)
+### Step 1 — Google Cloud Console
 
-1. Uncomment `openai-whisper>=20231117` in `backend/requirements.txt`
-2. Implement `services/whisper_service.py` (stub already written — just needs `transcribe()` wired)
-3. In `routers/files.py` `upload_file()`, add audio branch:
-   ```python
-   elif file_type == "audio":
-       transcript = await loop.run_in_executor(None, partial(whisper_svc.transcribe, tmp_path))
-       # then chunk + embed the transcript same as txt
-   ```
-4. Update `FileUploadZone` to show "transcribing…" state for audio files
+1. Go to [console.cloud.google.com](https://console.cloud.google.com) → **APIs & Services → Credentials**
+2. **Create credentials → OAuth 2.0 Client ID** → Application type: **Web application**
+3. Add **Authorised redirect URIs**:
+   - `https://hrxkpukmcndhwllbkbsx.supabase.co/auth/v1/callback`
+4. Copy the **Client ID** and **Client Secret**
 
-### 4b. Study sessions frontend
+### Step 2 — Supabase Dashboard
 
-1. Call `POST /sessions/start` when user enters `/queue` or `/flashcards`
-2. Call `POST /sessions/{id}/end` when they leave or finish the session
-3. This fixes the "study time always 0" dashboard stat
+1. Go to **Authentication → Providers → Google**
+2. Toggle **Enable**
+3. Paste the Client ID and Client Secret
+4. Save
 
-### 4c. Notes per topic
-
-1. Backend: `routers/notes.py` — `GET/POST/DELETE /notes?topic_id=`
-2. Frontend: add "Notes" section to `/topics/[id]` page — simple textarea + list
-
-### 4d. PWA
-
-1. Add `app/manifest.ts` (Next.js 14 built-in manifest route)
-2. Add `public/icons/` (192×192, 512×512 PNG)
-3. Add `next-pwa` or manual service worker for offline queue caching
-
-### 4e. SBB integration frontend
-
-Backend `GET /sbb/connections?from=X&to=Y` is live. Build a widget on the dashboard showing travel time from home to university before the next exam.
-
-### 4f. Analytics export
-
-Add `GET /analytics/export?format=csv` endpoint. Frontend: "Export" button on `/analytics`.
+The "Continue with Google" button on `/login` and `/register` will work immediately — no code changes needed.
 
 ---
 

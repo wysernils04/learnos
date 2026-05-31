@@ -179,6 +179,29 @@ async def get_quiz_history(
     return ApiResponse.ok([dict(r) for r in rows])
 
 
+@router.get("/sessions", response_model=ApiResponse[list])
+async def get_session_history(
+    user: CurrentUser = Depends(get_current_user),
+    db: Connection = Depends(get_db),
+):
+    rows = await db.fetch(
+        """
+        SELECT
+            start_time::date AS date,
+            COALESCE(SUM(duration_minutes), 0)::int AS total_minutes,
+            COUNT(*) AS session_count
+        FROM study_sessions
+        WHERE user_id = $1
+          AND start_time >= CURRENT_DATE - INTERVAL '29 days'
+          AND duration_minutes IS NOT NULL
+        GROUP BY start_time::date
+        ORDER BY start_time::date
+        """,
+        user.id,
+    )
+    return ApiResponse.ok([dict(r) for r in rows])
+
+
 @router.get("/export")
 async def export_data(
     user: CurrentUser = Depends(get_current_user),

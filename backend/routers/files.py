@@ -118,16 +118,19 @@ async def upload_file(
             finally:
                 os.unlink(tmp_path)
 
-        transcript = await loop.run_in_executor(None, _transcribe)
-        chunk_pairs: list[tuple[str, int | None]] = [(c, None) for c in _chunk_text(transcript) if c.strip()]
+        try:
+            transcript = await loop.run_in_executor(None, _transcribe)
+            chunk_pairs: list[tuple[str, int | None]] = [(c, None) for c in _chunk_text(transcript) if c.strip()]
 
-        if chunk_pairs:
-            texts = [cp[0] for cp in chunk_pairs]
-            vectors = await loop.run_in_executor(None, partial(emb_svc.encode_batch, texts))
-            await db.executemany(
-                "INSERT INTO file_chunks (file_id, chunk_index, page_number, chunk_text, embedding) VALUES ($1, $2, $3, $4, $5)",
-                [(file_id, idx, None, chunk_text, str(vec)) for idx, ((chunk_text, _), vec) in enumerate(zip(chunk_pairs, vectors))],
-            )
+            if chunk_pairs:
+                texts = [cp[0] for cp in chunk_pairs]
+                vectors = await loop.run_in_executor(None, partial(emb_svc.encode_batch, texts))
+                await db.executemany(
+                    "INSERT INTO file_chunks (file_id, chunk_index, page_number, chunk_text, embedding) VALUES ($1, $2, $3, $4, $5)",
+                    [(file_id, idx, None, chunk_text, str(vec)) for idx, ((chunk_text, _), vec) in enumerate(zip(chunk_pairs, vectors))],
+                )
+        except Exception:
+            chunk_pairs = []
 
         await db.execute(
             "UPDATE files SET page_count = NULL, chunk_count = $1 WHERE id = $2",

@@ -113,6 +113,11 @@ export default function AnalyticsPage() {
     queryFn: () => analyticsApi.topicsDue().then((r) => r.data ?? []),
   })
 
+  const { data: sessionHistory = [] } = useQuery({
+    queryKey: ['analytics-sessions'],
+    queryFn: () => analyticsApi.sessionHistory().then((r) => r.data ?? []),
+  })
+
   // Last 28 days of streak (most recent on right)
   const streakData = [...streak]
     .sort((a, b) => a.date.localeCompare(b.date))
@@ -128,6 +133,11 @@ export default function AnalyticsPage() {
   const quizData = quizHistory.map((q) => ({
     date: shortDate(q.date),
     score: q.avg_score,
+  }))
+
+  const sessionData = sessionHistory.map((s) => ({
+    date: shortDate(s.date),
+    minutes: s.total_minutes,
   }))
 
   const dueData = topicsDue.map((d) => ({
@@ -268,6 +278,22 @@ export default function AnalyticsPage() {
                 activeDot={{ r: 6, fill: TEAL }}
               />
             </LineChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </section>
+
+      {/* Study time */}
+      <section>
+        <SectionTitle>Study time — last 30 days</SectionTitle>
+        <ChartCard title="Minutes studied per day" empty={sessionData.length === 0} emptyMsg="Complete review sessions to see study time.">
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={sessionData} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: MUTED }} tickLine={false} axisLine={false} interval={6} />
+              <YAxis tick={{ fontSize: 10, fill: MUTED }} tickLine={false} axisLine={false} allowDecimals={false} />
+              <Tooltip content={<CustomTooltip unit=" min" />} />
+              <Bar dataKey="minutes" name="Minutes" fill={TEAL_LIGHT} radius={[4, 4, 0, 0]} maxBarSize={20} />
+            </BarChart>
           </ResponsiveContainer>
         </ChartCard>
       </section>
