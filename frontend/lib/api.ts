@@ -127,6 +127,38 @@ export const analyticsApi = {
   streak: () => request<{ date: string; topics_reviewed: number }[]>('/analytics/streak'),
 }
 
+// ── Exams ─────────────────────────────────────────────────────────────────────
+
+export interface ExamItem {
+  id: string
+  user_id: string
+  module: string
+  exam_name: string
+  exam_date: string
+  created_at: string
+}
+
+export interface ReadinessData {
+  exam: ExamItem
+  readiness_score: number
+  problems: string[]
+}
+
+export interface ExamTopic {
+  id: string
+  name: string
+  module: string
+}
+
+export const examsApi = {
+  list: () => request<ExamItem[]>('/exams'),
+  create: (data: { module: string; exam_name: string; exam_date: string; topic_ids: string[] }) =>
+    request<ExamItem>('/exams', { method: 'POST', body: JSON.stringify(data) }),
+  delete: (id: string) => request<null>(`/exams/${id}`, { method: 'DELETE' }),
+  topics: (id: string) => request<ExamTopic[]>(`/exams/${id}/topics`),
+  readiness: (id: string) => request<ReadinessData>(`/exams/${id}/readiness`),
+}
+
 // ── Flashcards ────────────────────────────────────────────────────────────────
 
 export interface Flashcard {

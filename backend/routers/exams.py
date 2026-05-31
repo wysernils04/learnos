@@ -45,6 +45,26 @@ async def create_exam(
     return ApiResponse.ok(dict(exam))
 
 
+@router.get("/{exam_id}/topics", response_model=ApiResponse[list[dict]])
+async def get_exam_topics(
+    exam_id: UUID,
+    user: CurrentUser = Depends(get_current_user),
+    db: Connection = Depends(get_db),
+):
+    exam = await db.fetchrow("SELECT id FROM exams WHERE id = $1 AND user_id = $2", exam_id, user.id)
+    if not exam:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Exam not found")
+    rows = await db.fetch(
+        """
+        SELECT t.id, t.name, t.module FROM topics t
+        JOIN exam_topics et ON et.topic_id = t.id
+        WHERE et.exam_id = $1
+        """,
+        exam_id,
+    )
+    return ApiResponse.ok([dict(r) for r in rows])
+
+
 @router.get("/{exam_id}/readiness", response_model=ApiResponse[ReadinessResponse])
 async def get_readiness_score(
     exam_id: UUID,
