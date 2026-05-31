@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { Providers } from '@/components/providers'
 
@@ -14,6 +14,9 @@ export const metadata: Metadata = {
   icons: {
     apple: '/icons/icon-192.png',
   },
+}
+
+export const viewport: Viewport = {
   themeColor: '#0D9488',
 }
 
