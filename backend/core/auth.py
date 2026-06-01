@@ -1,4 +1,3 @@
-import logging
 from uuid import UUID
 
 import jwt
@@ -8,8 +7,6 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 from core.config import settings
-
-logger = logging.getLogger(__name__)
 
 _bearer = HTTPBearer()
 
@@ -37,35 +34,10 @@ async def get_current_user(
             algorithms=["ES256", "RS256"],
             audience="authenticated",
         )
-    except (jwt.ExpiredSignatureError, jwt.PyJWTError) as exc:
-        try:
-            header = jwt.get_unverified_header(token)
-            unverified = jwt.decode(token, options={"verify_signature": False})
-        except Exception as parse_exc:
-            header = f"<could not parse header: {parse_exc}>"
-            unverified = {}
-        logger.error(
-            "JWT verification failed | "
-            "jwks_url=%s | "
-            "exc_type=%s | "
-            "exc=%s | "
-            "token_header=%s | "
-            "token_payload_unverified=%s",
-            _jwks_client.jwks_uri,
-            type(exc).__name__,
-            exc,
-            header,
-            unverified,
-        )
-        if isinstance(exc, jwt.ExpiredSignatureError):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Invalid token: {type(exc).__name__}: {exc}",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+    except (jwt.ExpiredSignatureError, jwt.PyJWTError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid token: {type(exc).__name__}: {exc}",
+            detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

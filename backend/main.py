@@ -49,9 +49,20 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    # Starlette 0.27+ re-raises unhandled exceptions past ExceptionMiddleware, so
+    # CORSMiddleware never sees the response. Add CORS headers manually here.
+    origin = request.headers.get("origin", "")
+    cors_headers: dict[str, str] = {}
+    if origin and origin in settings.cors_origins_list:
+        cors_headers = {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Vary": "Origin",
+        }
     return JSONResponse(
         status_code=500,
         content={"data": None, "error": "Internal server error"},
+        headers=cors_headers,
     )
 
 
