@@ -108,7 +108,7 @@ export default function TopicDetailPage() {
 
   const { data: topic, isLoading: topicLoading } = useQuery({
     queryKey: ['topic', id],
-    queryFn: () => topicsApi.get(id).then((r) => r.data),
+    queryFn: () => topicsApi.get(id).then((r) => r.data ?? null),
     enabled: !!id,
   })
 

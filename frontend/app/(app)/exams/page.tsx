@@ -156,7 +156,7 @@ function ExamCard({ exam, onDelete }: { exam: ExamItem; onDelete: () => void }) 
 
   const { data: readiness, isLoading } = useQuery({
     queryKey: ['exam-readiness', exam.id],
-    queryFn: () => examsApi.readiness(exam.id).then((r) => r.data),
+    queryFn: () => examsApi.readiness(exam.id).then((r) => r.data ?? null),
     enabled: expanded,
   })
 

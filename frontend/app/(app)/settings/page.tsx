@@ -17,7 +17,7 @@ export default function SettingsPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['settings'],
-    queryFn: () => settingsApi.get().then((r) => r.data),
+    queryFn: () => settingsApi.get().then((r) => r.data ?? null),
   })
 
   const saveKey = useMutation({
