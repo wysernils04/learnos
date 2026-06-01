@@ -95,27 +95,27 @@ export default function AnalyticsPage() {
 
   const { data: streak = [] } = useQuery({
     queryKey: ['analytics-streak'],
-    queryFn: () => analyticsApi.streak().then((r) => r.data ?? []),
+    queryFn: () => analyticsApi.streak().then((r) => Array.isArray(r.data) ? r.data : []),
   })
 
   const { data: modules = [] } = useQuery({
     queryKey: ['analytics-modules'],
-    queryFn: () => analyticsApi.modules().then((r) => r.data ?? []),
+    queryFn: () => analyticsApi.modules().then((r) => Array.isArray(r.data) ? r.data : []),
   })
 
   const { data: quizHistory = [] } = useQuery({
     queryKey: ['analytics-quiz'],
-    queryFn: () => analyticsApi.quizHistory().then((r) => r.data ?? []),
+    queryFn: () => analyticsApi.quizHistory().then((r) => Array.isArray(r.data) ? r.data : []),
   })
 
   const { data: topicsDue = [] } = useQuery({
     queryKey: ['analytics-due'],
-    queryFn: () => analyticsApi.topicsDue().then((r) => r.data ?? []),
+    queryFn: () => analyticsApi.topicsDue().then((r) => Array.isArray(r.data) ? r.data : []),
   })
 
   const { data: sessionHistory = [] } = useQuery({
     queryKey: ['analytics-sessions'],
-    queryFn: () => analyticsApi.sessionHistory().then((r) => r.data ?? []),
+    queryFn: () => analyticsApi.sessionHistory().then((r) => Array.isArray(r.data) ? r.data : []),
   })
 
   // Last 28 days of streak (most recent on right)

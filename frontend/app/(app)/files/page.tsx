@@ -80,7 +80,7 @@ export default function FilesPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['files'],
-    queryFn: () => filesApi.list().then((r) => r.data ?? []),
+    queryFn: () => filesApi.list().then((r) => Array.isArray(r.data) ? r.data : []),
   })
 
   const upload = useMutation({

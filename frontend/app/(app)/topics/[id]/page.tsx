@@ -114,7 +114,7 @@ export default function TopicDetailPage() {
 
   const { data: files } = useQuery({
     queryKey: ['topic-files', id],
-    queryFn: () => topicsApi.files(id).then((r) => r.data ?? []),
+    queryFn: () => topicsApi.files(id).then((r) => Array.isArray(r.data) ? r.data : []),
     enabled: !!id,
   })
 

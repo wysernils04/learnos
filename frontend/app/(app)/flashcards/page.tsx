@@ -45,7 +45,7 @@ function CardDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent>
+      <DialogContent aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>{initial ? 'Edit flashcard' : 'New flashcard'}</DialogTitle>
         </DialogHeader>

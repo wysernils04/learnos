@@ -78,7 +78,7 @@ function CreateExamDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] overflow-y-auto" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>New exam</DialogTitle>
         </DialogHeader>
@@ -238,12 +238,12 @@ export default function ExamsPage() {
 
   const { data: exams = [], isLoading } = useQuery({
     queryKey: ['exams'],
-    queryFn: () => examsApi.list().then((r) => r.data ?? []),
+    queryFn: () => examsApi.list().then((r) => Array.isArray(r.data) ? r.data : []),
   })
 
   const { data: topics = [] } = useQuery({
     queryKey: ['topics'],
-    queryFn: () => topicsApi.list().then((r) => r.data ?? []),
+    queryFn: () => topicsApi.list().then((r) => Array.isArray(r.data) ? r.data : []),
   })
 
   const createExam = useMutation({

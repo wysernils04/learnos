@@ -182,7 +182,7 @@ function TopicDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>{editing ? 'Edit topic' : 'Log a lecture'}</DialogTitle>
         </DialogHeader>
@@ -265,13 +265,11 @@ export default function TopicsPage() {
   const [editingTopic, setEditingTopic] = useState<Topic | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Topic | null>(null)
 
-  const { data, isLoading } = useQuery({
+  const { data: topics = [], isLoading } = useQuery({
     queryKey: ['topics'],
-    queryFn: () => topicsApi.list(),
+    queryFn: () => topicsApi.list().then((r) => Array.isArray(r.data) ? r.data : []),
     staleTime: 30_000,
   })
-
-  const topics: Topic[] = data?.data ?? []
   const modules = Array.from(new Set(topics.map((t) => t.module))).sort()
 
   const filtered = topics.filter((t) => {
@@ -436,7 +434,7 @@ export default function TopicsPage() {
 
       {/* Delete confirmation dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null) }}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Delete topic?</DialogTitle>
           </DialogHeader>
