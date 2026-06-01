@@ -160,17 +160,17 @@ export default function FlashcardsPage() {
 
   const { data: dueCards = [], isLoading: dueLoading } = useQuery({
     queryKey: ['flashcards-due'],
-    queryFn: () => flashcardsApi.due().then((r) => r.data ?? []),
+    queryFn: () => flashcardsApi.due().then((r) => Array.isArray(r.data) ? r.data : []),
   })
 
   const { data: allCards = [], isLoading: allLoading } = useQuery({
     queryKey: ['flashcards'],
-    queryFn: () => flashcardsApi.list().then((r) => r.data ?? []),
+    queryFn: () => flashcardsApi.list().then((r) => Array.isArray(r.data) ? r.data : []),
   })
 
   const { data: topics = [] } = useQuery({
     queryKey: ['topics'],
-    queryFn: () => topicsApi.list().then((r) => r.data ?? []),
+    queryFn: () => topicsApi.list().then((r) => Array.isArray(r.data) ? r.data : []),
   })
 
   const topicMap = Object.fromEntries(topics.map((t) => [t.id, t.name]))

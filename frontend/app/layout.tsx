@@ -7,9 +7,11 @@ export const metadata: Metadata = {
   description: 'Spaced-repetition learning for university students',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
-    capable: true,
     statusBarStyle: 'default',
     title: 'LearnOS',
+  },
+  other: {
+    'mobile-web-app-capable': 'yes',
   },
   icons: {
     apple: '/icons/icon-192.png',
