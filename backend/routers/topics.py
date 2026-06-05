@@ -100,6 +100,14 @@ async def log_lecture(
     user: CurrentUser = Depends(get_current_user),
     db: Connection = Depends(get_db),
 ):
+    if payload.prerequisite_topic_id is not None:
+        owned = await db.fetchval(
+            "SELECT id FROM topics WHERE id = $1 AND user_id = $2",
+            payload.prerequisite_topic_id, user.id,
+        )
+        if not owned:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Prerequisite topic not found")
+
     days = first_review_days(payload.understanding_score)
     next_due = date.today() + timedelta(days=days)
     memory_strength = float(payload.understanding_score) * 2.0

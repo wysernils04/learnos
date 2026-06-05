@@ -3,9 +3,13 @@ import hashlib
 import os
 import tempfile
 from functools import partial
+from pathlib import Path
+from uuid import UUID
 
 from asyncpg import Connection
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from core.algorithms import _chunk_text
 from core.auth import CurrentUser, get_current_user
@@ -16,6 +20,7 @@ from services import embeddings as emb_svc
 from services import pdf_service
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 MAX_BYTES = 50 * 1024 * 1024  # 50 MB
 
@@ -45,7 +50,7 @@ async def list_files(
 
 @router.delete("/{file_id}", response_model=ApiResponse[None])
 async def delete_file(
-    file_id: str,
+    file_id: UUID,
     user: CurrentUser = Depends(get_current_user),
     db: Connection = Depends(get_db),
 ):
@@ -63,7 +68,9 @@ async def delete_file(
 
 
 @router.post("/upload", response_model=ApiResponse[FileResponse], status_code=201)
+@limiter.limit("20/minute")
 async def upload_file(
+    request: Request,
     file: UploadFile = File(...),
     topic_id: str | None = Form(None),
     user: CurrentUser = Depends(get_current_user),
@@ -73,7 +80,7 @@ async def upload_file(
     if len(content) > MAX_BYTES:
         raise HTTPException(413, "File exceeds 50 MB limit")
 
-    filename = file.filename or "upload"
+    filename = Path(file.filename or "upload").name or "upload"
     file_type = _detect_type(filename, file.content_type or "")
     sha = hashlib.sha256(content).hexdigest()
 
@@ -105,7 +112,7 @@ async def upload_file(
     file_id = str(file_row["id"])
 
     if file_type == "audio":
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "mp3"
 
         def _transcribe():
@@ -138,7 +145,7 @@ async def upload_file(
         )
 
     elif file_type in ("pdf", "txt"):
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         if file_type == "pdf":
             def _extract_pdf():
@@ -193,7 +200,7 @@ async def semantic_search(
     user: CurrentUser = Depends(get_current_user),
     db: Connection = Depends(get_db),
 ):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     # Fetch more when filtering by topic so we still return `limit` results
     fetch_limit = payload.limit if payload.topic_id is None else payload.limit * 4
     vector = await loop.run_in_executor(None, partial(emb_svc.encode, payload.query))

@@ -17,7 +17,6 @@ TEST_FERNET_KEY = Fernet.generate_key().decode()
 
 os.environ.setdefault("SUPABASE_URL", "https://test.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_KEY", "test-service-key")
-os.environ.setdefault("SUPABASE_JWT_SECRET", "super-secret-test-jwt-key-32chars!!")
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
 os.environ.setdefault("FERNET_SECRET", TEST_FERNET_KEY)
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")

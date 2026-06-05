@@ -38,6 +38,12 @@ async def create_exam(
             user.id, payload.module, payload.exam_name, payload.exam_date,
         )
         for topic_id in payload.topic_ids:
+            owned = await db.fetchval(
+                "SELECT id FROM topics WHERE id = $1 AND user_id = $2",
+                topic_id, user.id,
+            )
+            if not owned:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Topic {topic_id} not found")
             await db.execute(
                 "INSERT INTO exam_topics (exam_id, topic_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
                 exam["id"], topic_id,
@@ -58,9 +64,9 @@ async def get_exam_topics(
         """
         SELECT t.id, t.name, t.module FROM topics t
         JOIN exam_topics et ON et.topic_id = t.id
-        WHERE et.exam_id = $1
+        WHERE et.exam_id = $1 AND t.user_id = $2
         """,
-        exam_id,
+        exam_id, user.id,
     )
     return ApiResponse.ok([dict(r) for r in rows])
 
@@ -83,10 +89,10 @@ async def get_readiness_score(
         FROM topics t
         JOIN exam_topics et ON et.topic_id = t.id
         LEFT JOIN quiz_history qh ON qh.topic_id = t.id
-        WHERE et.exam_id = $1
+        WHERE et.exam_id = $1 AND t.user_id = $2
         GROUP BY t.id
         """,
-        exam_id,
+        exam_id, user.id,
     )
 
     score, problems = _readiness([dict(r) for r in topic_rows], exam["exam_date"])

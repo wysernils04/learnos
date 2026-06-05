@@ -1,18 +1,27 @@
 import json
+import logging
+from uuid import UUID
 
 from asyncpg import Connection
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from core.auth import CurrentUser, get_current_user
 from core.database import get_db
 from models.schemas import ApiResponse, GenerateQuizRequest, QuizQuestion, QuizResultRequest
 from services.llm import generate_quiz_questions
 
+logger = logging.getLogger(__name__)
+limiter = Limiter(key_func=get_remote_address)
+
 router = APIRouter()
 
 
 @router.post("/generate", response_model=ApiResponse[list[QuizQuestion]])
+@limiter.limit("10/minute")
 async def generate_quiz(
+    request: Request,
     payload: GenerateQuizRequest,
     user: CurrentUser = Depends(get_current_user),
     db: Connection = Depends(get_db),
@@ -57,7 +66,8 @@ async def generate_quiz(
             question_types=payload.question_types,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Quiz generation failed: {str(e)}")
+        logger.error("Quiz generation failed for user %s topic %s: %s", user.id, payload.topic_id, e)
+        raise HTTPException(status_code=500, detail="Quiz generation failed")
 
     saved = []
     for q in raw_questions:
@@ -88,7 +98,7 @@ def _parse_options(row: dict) -> dict:
 
 @router.get("/{topic_id}", response_model=ApiResponse[list[QuizQuestion]])
 async def get_saved_quizzes(
-    topic_id: str,
+    topic_id: UUID,
     user: CurrentUser = Depends(get_current_user),
     db: Connection = Depends(get_db),
 ):
