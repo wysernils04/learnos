@@ -2,7 +2,7 @@
 
 Spaced-repetition learning app for university students. Upload your lecture PDFs and audio, get auto-generated quizzes, track exam readiness, and review flashcards using the SuperMemo-2 algorithm — the same algorithm used by Anki.
 
-**Live at [learnos.ch](https://learnos.ch)**
+**Not live at the moment [learnos.ch](https://learnos.ch)**
 
 ---
 
